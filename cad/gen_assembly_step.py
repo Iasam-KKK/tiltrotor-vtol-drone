@@ -51,16 +51,27 @@ def placed_parts() -> list[tuple[str, object]]:
         items.append((f"ruddervator_{label}", G.build_ruddervator(sgn).moved(
             Location((rv["x"], rv["y"], rv["z"])))))
 
-    # --- nacelle hardware, mm parts scaled to metres by FreeCAD on import ---
-    # Exported separately in mm; noted in the README of the folder.
+    # --- nacelle hardware -------------------------------------------------
+    # ⚠ THIS WAS BROKEN. The loop had a `break` after the first iteration and
+    # placed everything at Location((0,0,0)), so exactly ONE yoke and ONE
+    # cradle existed, buried at the origin inside the fuselage, and all three
+    # motor mounts were missing from the assembly view. The nacelles looked
+    # like a prop hub floating on a boom stub.
+    #
+    # These parts are modelled in MILLIMETRES and the FreeCAD document is in
+    # millimetres, so they are positioned in mm here and keep the _mm suffix,
+    # which is what tells the macro NOT to scale them.
+    MM = 1000.0
     for label, px, py in (("left", a, +y), ("right", a, -y)):
         wing_z = abs(py) * math.tan(P.WING_DIHEDRAL)
-        items.append((f"nacelle_yoke_{label}_mm",
-                      N.build_yoke().moved(Location((0, 0, 0)))))
-        items.append((f"nacelle_cradle_{label}_mm",
-                      N.build_cradle().moved(Location((0, 0, 0)))))
-        break      # one of each is enough to inspect; they are mirror pairs
-    items.append(("tail_motor_mount_mm", N.build_tail_mount()))
+        yoke_z = wing_z - 0.018
+        hub_z = yoke_z + 0.030
+        items.append((f"nacelle_yoke_{label}_mm", N.build_yoke().moved(
+            Location((px * MM, py * MM, yoke_z * MM)))))
+        items.append((f"nacelle_cradle_{label}_mm", N.build_cradle().moved(
+            Location((px * MM, py * MM, hub_z * MM)))))
+    items.append(("tail_motor_mount_mm", N.build_tail_mount().moved(
+        Location((-c * MM, 0.0, P.tail_rotor_z() * MM)))))
 
     # --- propellers ---
     for label, px, py, dia in (("left", a, +y, P.WING_PROP_DIAMETER),

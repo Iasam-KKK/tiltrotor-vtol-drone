@@ -6,8 +6,8 @@
   Regenerate with:  python cad/gen_sdf.py
 
   Tri-tiltrotor VTOL. Three nacelles, all three tilt 0-90 deg.
-  Hover trim solved, not assumed: wing 18.88 N each,
-  tail 9.32 N (19.8% of lift).
+  Hover trim solved, not assumed: wing 17.79 N each,
+  tail 9.92 N (21.8% of lift).
 -->
 <sdf version="1.9">
   <model name="tri_tiltrotor">
@@ -32,8 +32,8 @@
           Offsetting base_link's own CG by the opposite amount puts the
           assembled model's CG back on the origin, where the design says it is.
         -->
-        <pose>0.015023 0 0 0 0 0</pose>
-        <mass>3.850000</mass>
+        <pose>-0.014469 0 0 0 0 0</pose>
+        <mass>3.840000</mass>
         <inertia>
           <ixx>0.366667</ixx>
           <iyy>0.273682</iyy>
@@ -274,9 +274,9 @@
       </visual>
     </link>
     <link name="motor_tail">
-      <pose>-0.700000 0.000000 0.045000 0 0 0</pose>
+      <pose>-0.620000 0.000000 0.045000 0 0 0</pose>
       <inertial>
-        <mass>0.250000</mass>
+        <mass>0.100000</mass>
         <inertia>
           <ixx>0.000420</ixx><iyy>0.000420</iyy><izz>0.000350</izz>
           <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>

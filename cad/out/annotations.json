@@ -1,0 +1,165 @@
+{
+  "generated_from": "cad/params.py",
+  "cg": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0,
+    "mac_frac": 0.28,
+    "error_m": 0.0004432922877511338
+  },
+  "rotors": [
+    {
+      "name": "wing L",
+      "x": 0.1728,
+      "y": 0.4,
+      "z": 0.045,
+      "thrust_n": 17.792489101917255,
+      "max_n": 38.0
+    },
+    {
+      "name": "wing R",
+      "x": 0.1728,
+      "y": -0.4,
+      "z": 0.045,
+      "thrust_n": 17.792489101917255,
+      "max_n": 38.0
+    },
+    {
+      "name": "lift",
+      "x": -0.62,
+      "y": 0.0,
+      "z": 0.05804792626728113,
+      "thrust_n": 9.91787779616549,
+      "max_n": 25.0
+    }
+  ],
+  "battery": {
+    "x": 0.138,
+    "length_m": 0.17,
+    "mass_kg": 1.17,
+    "solved_x": 0.13624615384615385,
+    "authority_mac_per_10mm": 0.009721322099805575
+  },
+  "mass_items": [
+    {
+      "name": "wing panels (2)",
+      "mass_kg": 1.1,
+      "x": -0.012199999999999999
+    },
+    {
+      "name": "fuselage shell",
+      "mass_kg": 0.85,
+      "x": -0.06
+    },
+    {
+      "name": "tail surfaces",
+      "mass_kg": 0.22,
+      "x": -0.87
+    },
+    {
+      "name": "wing nacelles (2)",
+      "mass_kg": 0.7,
+      "x": 0.1728
+    },
+    {
+      "name": "tail nacelle",
+      "mass_kg": 0.1,
+      "x": -0.62
+    },
+    {
+      "name": "aileron servos (2)",
+      "mass_kg": 0.044,
+      "x": -0.156
+    },
+    {
+      "name": "ruddervator servos (2)",
+      "mass_kg": 0.018,
+      "x": -0.9
+    },
+    {
+      "name": "tilt servos (2)",
+      "mass_kg": 0.12,
+      "x": 0.15280000000000002
+    },
+    {
+      "name": "Nose camera",
+      "mass_kg": 0.045,
+      "x": 0.418
+    },
+    {
+      "name": "GPS / compass",
+      "mass_kg": 0.032,
+      "x": 0.36
+    },
+    {
+      "name": "Flight controller",
+      "mass_kg": 0.1,
+      "x": 0.285
+    },
+    {
+      "name": "Airspeed sensor",
+      "mass_kg": 0.015,
+      "x": 0.02
+    },
+    {
+      "name": "ESC x3",
+      "mass_kg": 0.09,
+      "x": -0.13
+    },
+    {
+      "name": "BEC",
+      "mass_kg": 0.025,
+      "x": -0.21
+    }
+  ],
+  "figures": [
+    [
+      "MTOW",
+      "4.64 kg  (ledger 4.629)"
+    ],
+    [
+      "CG",
+      "28% MAC, computed error +0.4 mm"
+    ],
+    [
+      "Battery",
+      "1.17 kg at x=+138 mm  (+136 solves CG)"
+    ],
+    [
+      "Hover trim",
+      "wing 17.79 N each, lift 9.92 N (21.8%)"
+    ],
+    [
+      "Payload",
+      "+0.87 kg to 5.51 kg  (limit: wing motor headroom)"
+    ],
+    [
+      "Wing loading",
+      "8.92 kg/m^2"
+    ],
+    [
+      "Envelope",
+      "stall 10.7 / transition 14.0 / cruise 19 m/s"
+    ],
+    [
+      "Cruise L/D",
+      "13.8  (best 15.7 at 14.8 m/s)"
+    ],
+    [
+      "Glide",
+      "3.66 deg, sink 0.94 m/s"
+    ],
+    [
+      "Hover authority",
+      "roll 8.9 / pitch 18.5 / yaw 4.5 rad/s^2"
+    ],
+    [
+      "Wake clearance",
+      "V-tail 123 mm behind the lift disc"
+    ],
+    [
+      "Servo rail",
+      "15 A peak -> separate BEC"
+    ]
+  ]
+}

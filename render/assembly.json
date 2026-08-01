@@ -4,11 +4,11 @@
     "units": "metres",
     "tilt_deg": 0.0,
     "aircraft": {
-      "mtow_kg": 4.8,
+      "mtow_kg": 4.64,
       "span_m": 2.0,
       "wing_area_m2": 0.52,
       "airfoil": "NACA 2410",
-      "stall_ms": 10.92,
+      "stall_ms": 10.74,
       "cruise_ms": 19.0
     },
     "parts": [
@@ -291,9 +291,9 @@
         "mesh": "cad/out/tail_motor_mount.stl",
         "scale": 0.001,
         "loc": [
-          -0.7,
+          -0.62,
           0.0,
-          0.05214193548387097
+          0.05804792626728113
         ],
         "rot": [
           0,
@@ -307,9 +307,9 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/prop_tail.stl",
         "scale": 1.0,
         "loc": [
-          -0.7,
+          -0.62,
           0.0,
-          0.08714193548387097
+          0.09304792626728113
         ],
         "rot": [
           0,
@@ -326,11 +326,11 @@
     "units": "metres",
     "tilt_deg": 45.0,
     "aircraft": {
-      "mtow_kg": 4.8,
+      "mtow_kg": 4.64,
       "span_m": 2.0,
       "wing_area_m2": 0.52,
       "airfoil": "NACA 2410",
-      "stall_ms": 10.92,
+      "stall_ms": 10.74,
       "cruise_ms": 19.0
     },
     "parts": [
@@ -613,9 +613,9 @@
         "mesh": "cad/out/tail_motor_mount.stl",
         "scale": 0.001,
         "loc": [
-          -0.7,
+          -0.62,
           0.0,
-          0.05214193548387097
+          0.05804792626728113
         ],
         "rot": [
           0,
@@ -629,9 +629,9 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/prop_tail.stl",
         "scale": 1.0,
         "loc": [
-          -0.7,
+          -0.62,
           0.0,
-          0.08714193548387097
+          0.09304792626728113
         ],
         "rot": [
           0,
@@ -648,11 +648,11 @@
     "units": "metres",
     "tilt_deg": 90.0,
     "aircraft": {
-      "mtow_kg": 4.8,
+      "mtow_kg": 4.64,
       "span_m": 2.0,
       "wing_area_m2": 0.52,
       "airfoil": "NACA 2410",
-      "stall_ms": 10.92,
+      "stall_ms": 10.74,
       "cruise_ms": 19.0
     },
     "parts": [
@@ -935,9 +935,9 @@
         "mesh": "cad/out/tail_motor_mount.stl",
         "scale": 0.001,
         "loc": [
-          -0.7,
+          -0.62,
           0.0,
-          0.05214193548387097
+          0.05804792626728113
         ],
         "rot": [
           0,
@@ -951,9 +951,9 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/prop_tail.stl",
         "scale": 1.0,
         "loc": [
-          -0.7,
+          -0.62,
           0.0,
-          0.08714193548387097
+          0.09304792626728113
         ],
         "rot": [
           0,

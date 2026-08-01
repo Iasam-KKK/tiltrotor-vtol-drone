@@ -16,19 +16,49 @@ HERE = os.path.dirname(__file__)
 ASSY = os.path.abspath(os.path.join(HERE, "..", "cad", "out", "assembly"))
 
 # Colour by ROLE, so the picture answers a question instead of being decorative.
+# (r, g, b, shininess) -- shininess separates the painted shells from the matt
+# printed parts and the satin carbon, which is most of what makes it read as a
+# machine rather than as a pile of solids.
 COLORS = {
-    "structure": (0.15, 0.15, 0.18),   # carbon: rods and spars
-    "formers":   (0.90, 0.55, 0.10),   # printed bulkheads
-    "linkages":  (0.85, 0.15, 0.15),   # control runs
-    "aileron":   (0.20, 0.60, 0.90),   # moving surfaces
-    "ruddervat": (0.20, 0.60, 0.90),
-    "nacelle":   (0.55, 0.35, 0.75),   # printed nacelle hardware
-    "tail_moto": (0.55, 0.35, 0.75),
-    "prop":      (0.35, 0.35, 0.38),
+    "structure": (0.11, 0.11, 0.13, 0.55),   # carbon: rods and spars
+    "formers":   (0.93, 0.62, 0.16, 0.15),   # printed bulkheads, matt
+    "linkages":  (0.80, 0.18, 0.18, 0.60),   # control runs
+    "aileron":   (0.16, 0.45, 0.80, 0.70),   # moving surfaces
+    "ruddervat": (0.16, 0.45, 0.80, 0.70),
+    "nacelle":   (0.42, 0.44, 0.50, 0.35),   # printed nacelle hardware
+    "tail_moto": (0.42, 0.44, 0.50, 0.35),
+    "prop":      (0.16, 0.17, 0.20, 0.45),
+    "fuselage":  (0.96, 0.96, 0.97, 0.85),   # painted shells, gloss white
+    "wing":      (0.93, 0.94, 0.96, 0.85),
+    "tail":      (0.93, 0.94, 0.96, 0.85),
 }
-DEFAULT = (0.82, 0.84, 0.86)           # shells
-TRANSPARENT = ("fuselage", "wing", "tail")   # so the internals are visible
+DEFAULT = (0.88, 0.89, 0.91, 0.60)
+# Shells are only see-through if you ask. On a light background heavy
+# transparency washes the whole aircraft out, so this is off by default and the
+# structure is inspected by hiding shells (spacebar) instead.
+SHOW_INTERNALS = False
+SHELL_TRANSPARENCY = 55
+TRANSPARENT = ("fuselage", "wing", "tail")
 
+
+def style_background():
+    """Light gradient instead of the near-black default.
+
+    The default dark grey plus Flat Lines draw style is what made every
+    tessellation edge visible -- a lofted wing is thousands of triangles, so
+    the surface reads as hatching rather than as a surface.
+    """
+    p = App.ParamGet("User parameter:BaseApp/Preferences/View")
+    p.SetBool("Simple", False)
+    p.SetBool("Gradient", True)
+    p.SetBool("UseBackgroundColorMid", False)
+    # Packed RGBA. Top: soft warm white. Bottom: pale slate.
+    p.SetUnsigned("BackgroundColor", 0xF7F8FAFF)
+    p.SetUnsigned("BackgroundColor2", 0xC9D3E0FF)
+    # Annotation text has to change with the background or it disappears.
+    p.SetUnsigned("DefaultShapeColor", 0xE0E3E8FF)
+
+style_background()
 doc = App.newDocument("tri_tiltrotor")
 
 files = sorted(f for f in os.listdir(ASSY) if f.lower().endswith(".step"))
@@ -49,16 +79,186 @@ for fn in files:
     obj = doc.addObject("Part::Feature", name)
     obj.Shape = shape
 
-    col = DEFAULT
+    spec = DEFAULT
     for key, c in COLORS.items():
         if name.startswith(key):
-            col = c
+            spec = c
             break
-    obj.ViewObject.ShapeColor = col
-    if any(name.startswith(t) for t in TRANSPARENT):
-        obj.ViewObject.Transparency = 72
+    obj.ViewObject.ShapeColor = spec[:3]
+
+    # SHADED, not Flat Lines. Flat Lines draws every tessellation edge, and a
+    # lofted wing is thousands of triangles -- which is why the surfaces read
+    # as dense hatching instead of as surfaces.
+    try:
+        obj.ViewObject.DisplayMode = "Shaded"
+    except Exception:
+        pass
+    # Finer tessellation so the curved surfaces are actually smooth rather than
+    # merely un-hatched.
+    try:
+        obj.ViewObject.Deviation = 0.10
+        obj.ViewObject.AngularDeflection = 12.0
+    except Exception:
+        pass
+    try:
+        obj.ViewObject.ShapeAppearance[0].Shininess = spec[3]
+    except Exception:
+        pass
+    if SHOW_INTERNALS and any(name.startswith(t) for t in TRANSPARENT):
+        obj.ViewObject.Transparency = SHELL_TRANSPARENCY
+
+# ---------------------------------------------------------------------------
+# Annotations: CG, thrust vectors, mass items and the key figures.
+#
+# All values come from cad/out/annotations.json, generated from params.py, so
+# the marked-up drawing cannot claim something the design does not. If the CG
+# moves the marker moves; if MTOW changes the label changes.
+# ---------------------------------------------------------------------------
+import json
+
+ANN = os.path.abspath(os.path.join(HERE, "..", "cad", "out",
+                                   "annotations.json"))
+
+
+def _label(name, text_lines, pos, colour=(0.10, 0.10, 0.12), size=14):
+    """3D text label.
+
+    ⚠ App::AnnotationLabel defaults to a SATURATED BLUE background chip. That
+    was invisible against the old dark theme and unreadable against the light
+    one -- dark text on strong blue. Both the chip and the text have to be set
+    explicitly; setting only TextColor leaves the chip fighting it.
+    """
+    try:
+        a = doc.addObject("App::AnnotationLabel", name)
+        a.LabelText = text_lines
+        a.BasePosition = App.Vector(*pos)
+        vo = a.ViewObject
+        vo.TextColor = colour
+        vo.FontSize = size
+        for prop, val in (("BackgroundColor", (1.0, 1.0, 1.0)),
+                          ("Transparency", 8),
+                          ("Frame", True)):
+            try:
+                setattr(vo, prop, val)
+            except Exception:
+                pass
+        return a
+    except Exception:
+        return None
+
+
+def _marker(name, pos, r, colour):
+    obj = doc.addObject("Part::Feature", name)
+    obj.Shape = Part.makeSphere(r, App.Vector(*pos))
+    obj.ViewObject.ShapeColor = colour
+    return obj
+
+
+def _arrow(name, base, direction, length, r, colour):
+    """Cylinder + cone, pointing along `direction`."""
+    d = App.Vector(*direction).normalize()
+    shaft = Part.makeCylinder(r, length * 0.78, App.Vector(*base), d)
+    head = Part.makeCone(r * 2.2, 0.0, length * 0.22,
+                         App.Vector(*base) + d * (length * 0.78), d)
+    obj = doc.addObject("Part::Feature", name)
+    obj.Shape = shaft.fuse(head)
+    obj.ViewObject.ShapeColor = colour
+    return obj
+
+
+if os.path.exists(ANN):
+    ann = json.load(open(ANN))
+    M = 1000.0                       # metres -> mm, same as the parts
+
+    # --- CG -----------------------------------------------------------------
+    cg = ann["cg"]
+    _marker("CG_marker", (cg["x"] * M, cg["y"] * M, cg["z"] * M), 16,
+            (1.0, 0.05, 0.05))
+    # Dark text now -- the background is light.
+    _label("CG_label", ["CG %.0f%% MAC" % (cg["mac_frac"] * 100)],
+           (70, 0, 80), (0.70, 0.05, 0.05), 16)
+
+    # --- thrust vectors, length proportional to hover thrust ----------------
+    # Scaled against the LARGEST motor limit so the arrows are comparable to
+    # each other and show how much of each motor is actually being used.
+    max_n = max(r["max_n"] for r in ann["rotors"])
+    for r in ann["rotors"]:
+        L = 260.0 * r["thrust_n"] / max_n
+        _arrow("thrust_" + r["name"].replace(" ", "_"),
+               (r["x"] * M, r["y"] * M, r["z"] * M), (0, 0, 1), L, 5.0,
+               (0.1, 0.85, 0.35))
+        _label("thrustlbl_" + r["name"].replace(" ", "_"),
+               ["%.1f N  (%.0f%%)" % (r["thrust_n"],
+                                      100 * r["thrust_n"] / r["max_n"])],
+               (r["x"] * M, r["y"] * M, r["z"] * M + L + 26),
+               (0.05, 0.40, 0.12), 15)
+
+    # --- battery, the CG lever ---------------------------------------------
+    b = ann["battery"]
+    _marker("BATTERY_marker", (b["x"] * M, 0, -30), 12, (0.95, 0.65, 0.1))
+    _label("BATTERY_label",
+           ["BATTERY %.2f kg @ %+.0f mm" % (b["mass_kg"], b["x"] * M)],
+           (b["x"] * M, 0, -100), (0.55, 0.33, 0.02), 15)
+
+    # --- every mass item, so the ledger is visible in place -----------------
+    for it in ann["mass_items"]:
+        if it["mass_kg"] < 0.04:
+            continue                 # skip the trivia, keep the view readable
+        _marker("m_" + it["name"].split()[0].lower(),
+                (it["x"] * M, 0, 30), 5 + 26 * it["mass_kg"] / 1.2,
+                (0.35, 0.55, 0.95))
+
+    # --- findings as a SPREADSHEET ------------------------------------------
+    # ⚠ A twelve-line App::AnnotationLabel floating in the 3D view was never
+    # going to be readable: the chip colour is not reliably settable, the text
+    # does not scale with zoom, and it covers the aircraft. A spreadsheet is
+    # always legible, selectable and copyable, and it lives in its own tab
+    # instead of on top of the model.
+    #
+    # The 3D labels stay, but only as SHORT tags -- a number at the thing it
+    # describes, which is what a callout is for.
+    try:
+        sheet = doc.addObject("Spreadsheet::Sheet", "FINDINGS")
+        sheet.set("A1", "TRI-TILTROTOR")
+        sheet.set("B1", "generated from cad/params.py")
+        row = 3
+        for k, v in ann["figures"]:
+            sheet.set("A%d" % row, str(k))
+            sheet.set("B%d" % row, str(v))
+            row += 1
+        row += 1
+        sheet.set("A%d" % row, "MASS LEDGER")
+        sheet.set("B%d" % row, "kg")
+        sheet.set("C%d" % row, "x (mm)")
+        row += 1
+        for it in sorted(ann["mass_items"], key=lambda i: -i["mass_kg"]):
+            sheet.set("A%d" % row, it["name"])
+            sheet.set("B%d" % row, "%.3f" % it["mass_kg"])
+            sheet.set("C%d" % row, "%+.0f" % (it["x"] * M))
+            row += 1
+        sheet.set("A%d" % row, "battery")
+        sheet.set("B%d" % row, "%.3f" % b["mass_kg"])
+        sheet.set("C%d" % row, "%+.0f" % (b["x"] * M))
+        doc.recompute()
+    except Exception as exc:
+        App.Console.PrintWarning("spreadsheet unavailable: %s\n" % exc)
+        _label("FINDINGS",
+               ["%-15s %s" % (k, v) for k, v in ann["figures"]],
+               (900, 0, 420), (0.08, 0.12, 0.25))
+
+    App.Console.PrintMessage(
+        "\nAnnotations: red sphere = CG, green arrows = hover thrust "
+        "(length prop. to N), orange = battery, blue = mass items "
+        "(radius prop. to mass).\n")
 
 doc.recompute()
+
+# Whole-view draw style, in case any object ignored its per-object setting.
+try:
+    Gui.runCommand("Std_DrawStyleShaded", 0)
+except Exception:
+    pass
+
 Gui.activeDocument().activeView().viewIsometric()
 Gui.SendMsgToActiveView("ViewFit")
 

@@ -2,16 +2,16 @@
   "generated_from": "cad/params.py",
   "note": "DO NOT EDIT. Regenerate with cad/gen_flight_params.py",
   "envelope": {
-    "v_stall_ms": 10.924,
-    "v_transition_ms": 14.201,
+    "v_stall_ms": 10.74,
+    "v_transition_ms": 13.962,
     "v_cruise_ms": 19.0
   },
   "glide": {
     "l_over_d_max": 15.651,
-    "v_best_glide_ms": 15.009,
+    "v_best_glide_ms": 14.757,
     "glide_angle_deg": 3.656,
-    "sink_rate_ms": 0.957,
-    "l_over_d_at_cruise": 14.059
+    "sink_rate_ms": 0.941,
+    "l_over_d_at_cruise": 13.845
   },
   "tilt": {
     "hover_deg": 0.0,

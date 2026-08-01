@@ -14,9 +14,10 @@ if (-not (Test-Path $freecad)) {
 
 $venv = Join-Path $root "..\..\.venv-cad\Scripts\python.exe"
 if (Test-Path $venv) {
-    Write-Host "regenerating STEP assembly from params.py..."
+    Write-Host "regenerating STEP assembly + annotations from params.py..."
     Push-Location (Join-Path $root "cad")
-    & $venv "gen_assembly_step.py" | Select-Object -Last 3
+    & $venv "gen_assembly_step.py" | Select-Object -Last 2
+    & $venv "gen_annotations.py"   | Select-Object -Last 2
     Pop-Location
 }
 

@@ -26,9 +26,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from build123d import (
-    Align, Box, BuildLine, BuildPart, BuildSketch, Location, Locations, Mode,
-    Plane, Polyline, Vector, export_step, export_stl, extrude, loft, make_face,
-    Rot,
+    Align, Box, BuildLine, BuildPart, BuildSketch, Cylinder, Location,
+    Locations, Mode, Plane, Polyline, Vector, export_step, export_stl, extrude,
+    loft, make_face, mirror, Rot,
 )
 
 import params as P
@@ -288,16 +288,25 @@ def build_wing(cut: bool = True):
         # (t^0.7, so it leaves the wing nearly tangent and curls up), and the
         # root section matches the wing tip exactly -- same chord, same twist,
         # zero cant. That makes it one continuous surface.
+        # ⚠ ALWAYS BUILT FOR THE +y SIDE, THEN MIRRORED.
+        # Building it directly for sign=-1 puts the aerofoil upside down on the
+        # right winglet, and nothing about the code looks wrong. The plane's
+        # in-plane Y is z_dir x x_dir:
+        #     sign=+1, phi=0 -> (0,cos,sin) x (1,0,0) = (0, 0, -1)
+        #     sign=-1, phi=0 -> (0,-cos,sin) x (1,0,0) = (0, 0, +1)
+        # -- opposite, so the right winglet's section was flipped relative to
+        # the wing it grows out of. That is why one tip looked right and the
+        # other did not. Mirroring a known-good solid cannot drift.
         h = P.WINGLET_HEIGHT_FRAC * semi
         n_bl = 6
-        px_, py_, pz_ = dx, sign * semi, dz
+        px_, py_, pz_ = dx, semi, dz
         with BuildPart() as wl:
             for i in range(n_bl + 1):
                 t = i / n_bl
                 phi = P.WINGLET_CANT * (t ** 0.7)
                 c_i = c_tip + (c_tip * P.WINGLET_TAPER - c_tip) * t
                 tw_i = P.WING_TWIST_TIP + P.WINGLET_TOE * t
-                uy_i, uz_i = sign * math.cos(phi), math.sin(phi)
+                uy_i, uz_i = math.cos(phi), math.sin(phi)
                 plane = Plane(origin=(px_, py_, pz_), x_dir=(1, 0, 0),
                               z_dir=(0, uy_i, uz_i))
                 with BuildSketch(plane):
@@ -312,11 +321,12 @@ def build_wing(cut: bool = True):
                     ds = h / n_bl
                     phi_m = P.WINGLET_CANT * (((i + 0.5) / n_bl) ** 0.7)
                     px_ -= ds * math.tan(P.WINGLET_SWEEP)
-                    py_ += sign * ds * math.cos(phi_m)
+                    py_ += ds * math.cos(phi_m)
                     pz_ += ds * math.sin(phi_m)
             loft(ruled=False)
 
-        return part.part + wl.part
+        winglet = wl.part if sign > 0 else mirror(wl.part, about=Plane.XZ)
+        return part.part + winglet
 
     wing = half(+1.0) + half(-1.0)
 
@@ -500,6 +510,50 @@ def build_formers():
     return out
 
 
+def _control_horn(origin, normal, chord_dir):
+    """A real control horn: bolt flange + drilled blade.
+
+    Built in a canonical frame (+X along the chord, +Z standing off the
+    surface) and then placed, which is far less error-prone than trying to
+    orient boxes directly -- the same class of mistake that flipped the
+    right-hand winglet and one of the ruddervator horns.
+
+    Returns (solid, hole_point) where hole_point is the OUTERMOST hole, i.e.
+    where the pushrod actually attaches. Returning it means the rod cannot be
+    drawn to a point the horn does not have.
+    """
+    h = P.CONTROL_HORN_H_MM / 1000.0
+    t = P.CONTROL_HORN_T_MM / 1000.0
+    bl = P.HORN_BASE_L_MM / 1000.0
+    bw = P.HORN_BASE_W_MM / 1000.0
+    bt = P.HORN_BASE_T_MM / 1000.0
+    blade_l = P.HORN_BLADE_L_MM / 1000.0
+    hole_r = P.HORN_HOLE_DIA_MM / 2000.0
+
+    with BuildPart() as horn:
+        # Flange, lying on the surface.
+        with Locations((0, 0, bt / 2.0)):
+            Box(bl, bw, bt)
+        # Blade, standing off it.
+        with Locations((-0.001, 0, bt + h / 2.0)):
+            Box(blade_l, t, h)
+        # Adjustment holes, drilled across the blade.
+        for f in P.HORN_HOLES:
+            with Locations(Location((-blade_l * 0.28, 0, bt + h * f),
+                                    (90, 0, 0))):
+                Cylinder(radius=hole_r, height=t * 3.0, mode=Mode.SUBTRACT)
+    solid = horn.part
+
+    pl = Plane(origin=origin, x_dir=chord_dir, z_dir=normal)
+    outer = P.HORN_HOLES[-1]
+    # from_local_coords, not Location * Vector -- build123d has no operator for
+    # transforming a point by a Location, and the error it raises for trying
+    # says nothing useful.
+    hole_pt = pl.from_local_coords(
+        Vector(-blade_l * 0.28, 0, bt + h * outer))
+    return solid.moved(pl.location), (hole_pt.X, hole_pt.Y, hole_pt.Z)
+
+
 def build_linkages():
     """Control horns and pushrods -- the visible half of every servo run.
 
@@ -527,69 +581,57 @@ def build_linkages():
     parts = []
     for sgn in (+1.0, -1.0):
         y = sgn * a["y_mid"]
-        # Control horn on the aileron, standing DOWN from its leading edge so
-        # the pushrod runs clear of the wing underside.
-        with BuildPart() as horn:
-            with Locations((a["x"] - 0.004, y, a["z"] - horn_h / 2.0)):
-                Box(horn_t, 0.010, horn_h)
-        parts.append(horn.part)
-        # Servo horn, standing down out of the bay opening.
-        with BuildPart() as shorn:
-            with Locations((x_servo, y, z_servo - horn_h / 2.0 - 0.006)):
-                Box(horn_t, 0.010, horn_h)
-        parts.append(shorn.part)
-        # Pushrod between the two horn tips.
-        x0, z0 = x_servo, z_servo - horn_h - 0.006
-        x1, z1 = a["x"] - 0.004, a["z"] - horn_h
-        length = math.hypot(x1 - x0, z1 - z0)
-        pitch = math.atan2(z1 - z0, x1 - x0)
-        with BuildPart() as rod:
-            plane = Plane(origin=((x0 + x1) / 2.0, y, (z0 + z1) / 2.0),
-                          x_dir=(math.cos(pitch), 0, math.sin(pitch)),
-                          z_dir=(0, 1, 0))
-            with BuildSketch(plane):
-                with BuildLine():
-                    Polyline(*_ellipse_pts(length / 2.0, rod_r, 20), close=True)
-                make_face()
-            extrude(amount=rod_r, both=True)
-        parts.append(rod.part)
+        # Both horns stand DOWN off the lower surface; the chord direction is
+        # +x. Real horns, with a bolt flange and drilled blade, so the rod
+        # attaches at a hole that actually exists.
+        nrm = (0.0, 0.0, -1.0)
+        chord = (1.0, 0.0, 0.0)
+
+        srv, srv_hole = _control_horn((x_servo, y, z_servo - 0.006), nrm, chord)
+        parts.append(srv)
+        ctl, ctl_hole = _control_horn((a["x"] - 0.006, y, a["z"] - 0.004),
+                                      nrm, chord)
+        parts.append(ctl)
+        parts.append(_tube(srv_hole, ctl_hole, rod_r, n=12))
 
     # --- ruddervator runs ---------------------------------------------------
-    # These were missing entirely: the tail servos sat in the aft fuselage
-    # driving nothing. Long curved runs out to each panel, so they are SLEEVED.
-    # An unsleeved 2 mm rod over the 320 mm run is buckling-limited;
-    # params.check() puts the sleeved margin at 30x.
-    # ⚠ CORRECTED. The first version ran the rod to `rv["y"] * 0.55,
-    # rv["z"] * 0.55` -- 55% of the way to the hinge MIDPOINT, which is a point
-    # hanging in mid-air between the fuselage and the panel, attached to
-    # nothing. It rendered as a long diagonal strut floating outside the tail.
-    #
-    # A horn has to sit ON the surface it drives. Placed near the ruddervator
-    # ROOT and standing off along the panel's own NORMAL, so the rod runs
-    # mostly fore/aft and stays clear of the skin. Run drops from ~200 mm of
-    # diagonal to ~95 mm.
-    sleeve_r = P.RUDDERVATOR_ROD_DIA_MM / 2000.0 + 0.0015
-    d_t = P.solve()
+    # Servos are surface-mounted on the fuselage at the tail root, arms facing
+    # aft, with pushrods out to horns near the inboard end of each ruddervator.
+    # Longer than the aileron run by construction -- that is the price of a
+    # servo you can actually unscrew and replace -- and the buckling check
+    # confirms a 2 mm rod still carries it with margin.
+    rod_r_t = P.RUDDERVATOR_ROD_DIA_MM / 2000.0
+    d_rv = P.solve()
     for sgn in (+1.0, -1.0):
         rv = P.ruddervator_geometry(sgn)
+        st = _tail_servo_station(sgn)
         _, uy, uz = rv["axis"]
-        # ⚠ The base was ON the hinge line -- the very leading edge of the
-        # moving surface -- so the horn touched the panel at a single edge and
-        # read as detached. Move it AFT into the ruddervator body so it is
-        # visibly, and actually, attached to the thing it drives.
-        s_horn = 0.18 * d_t.tail_panel_span
-        base = (rv["x"] - 0.018, s_horn * uy, 0.010 + s_horn * uz)
-        # Panel normal, picking the branch that points BELOW the panel on BOTH
-        # sides. Writing it as (0, uz, -uy) looks symmetric and is not: uy
-        # changes sign with the panel but uz does not, so the right-hand horn
-        # ended up pointing UP while the left pointed down.
+
+        # Servo body, sitting proud of the skin.
+        sl = P.TAIL_SERVO_L_MM / 1000.0
+        sw = P.TAIL_SERVO_W_MM / 1000.0
+        sh = P.TAIL_SERVO_H_MM / 1000.0
+        with BuildPart() as body:
+            with Locations(st["origin"]):
+                Box(sl, sw, sh)
+        parts.append(body.part)
+
+        # Output arm, standing outboard off the case.
+        arm_o = (st["origin"][0] - sl * 0.35,
+                 st["origin"][1] + sgn * sw * 0.5,
+                 st["origin"][2])
+        srv, srv_hole = _control_horn(arm_o, (0.0, sgn * 1.0, 0.0),
+                                      (1.0, 0.0, 0.0))
+        parts.append(srv)
+
+        # Horn on the ruddervator, near its inboard end.
+        s_h = P.TAIL_HORN_SPAN_FRAC * d_rv.tail_panel_span
         nrm = (0.0, sgn * uz, -abs(uy))
-        tip = tuple(base[i] + horn_h * nrm[i] for i in range(3))
-        parts.append(_tube(base, tip, horn_t / 2.0, n=10))
-        # Sleeved run from the fuselage servo bay to that horn tip.
-        parts.append(_tube(
-            (P.TAIL_SERVO_X - 0.015, sgn * 0.010, -0.004), tip,
-            sleeve_r, n=14))
+        c_base = (rv["x"] - 0.010, s_h * uy, 0.010 + s_h * uz)
+        ctl, ctl_hole = _control_horn(c_base, nrm, (1.0, 0.0, 0.0))
+        parts.append(ctl)
+
+        parts.append(_tube(srv_hole, ctl_hole, rod_r_t, n=12))
 
     out = parts[0]
     for p in parts[1:]:
@@ -597,28 +639,44 @@ def build_linkages():
     return out
 
 
-def _tail_servo_bay(sign: float):
-    """Pocket in the aft fuselage for one ruddervator servo.
+def _tail_servo_station(sign: float) -> dict:
+    """Where the ruddervator servo sits: SURFACE-MOUNTED on the fuselage.
 
-    NOT in the V-tail: a NACA 0009 panel at 180 mm chord is 16.2 mm thick, which
-    leaves 1.3 mm of skin around a 13.6 mm servo. They sit in the tail boom and
-    drive the ruddervators through pushrods, which is standard practice.
+    ⚠ Was inside the V-tail panel. It fits there (13.0 mm of section against a
+    9.6 mm servo) but that is not how these are built, and more importantly a
+    servo laminated inside a tail panel cannot be replaced. Real V-tails of
+    this size carry both servos screwed to the fuselage skin at the tail root,
+    bodies proud, arms facing aft.
     """
+    d = P.solve()
+    rv = P.ruddervator_geometry(sign)
+    _, uy, uz = rv["axis"]
+    x = P.TAIL_SERVO_MOUNT_X
+    hw = P.fuselage_half_width_at(x)
+    w = P.TAIL_SERVO_W_MM / 1000.0
+    # Body sits ON the skin, so its centre is half a case outboard of it.
+    y = sign * (hw + w / 2.0)
+    return dict(x=x, s=P.TAIL_HORN_SPAN_FRAC * d.tail_panel_span,
+                uy=uy, uz=uz, half_w=hw,
+                origin=(x, y, 0.004),
+                normal=(0.0, sign * 1.0, 0.0))
+
+
+def _tail_servo_bay(sign: float):
+    """Shallow recess in the fuselage skin so the servo sits flush-ish.
+
+    The servo is external now, so this is a seat and a wire pass-through, not
+    a pocket that swallows the body.
+    """
+    st = _tail_servo_station(sign)
     cl = P.SERVO_MOUNT_CLEARANCE_MM / 1000.0
-    ln = P.SURFACE_SERVO_L_MM / 1000.0 + cl
-    wd = P.SURFACE_SERVO_W_MM / 1000.0 + cl
-    ht = P.SURFACE_SERVO_H_MM / 1000.0 + cl
-    # Side by side, one per panel, offset just enough to clear each other.
-    y = sign * (wd / 2.0 + 0.001)
+    ln = P.TAIL_SERVO_L_MM / 1000.0 + cl
+    ht = P.TAIL_SERVO_H_MM / 1000.0 + cl
+    depth = 0.004
     with BuildPart() as bay:
-        with Locations((P.TAIL_SERVO_X, y, 0.0)):
-            Box(ln, wd, ht)
+        with Locations((st["x"], sign * (st["half_w"] - depth / 2.0), 0.004)):
+            Box(ln, depth, ht)
     return bay.part
-
-
-# ---------------------------------------------------------------------------
-# Fuselage
-# ---------------------------------------------------------------------------
 
 def _ellipse_pts(a: float, b: float, n: int = 72) -> list[tuple[float, float]]:
     """Superellipse cross-section. Slightly squared so it reads as a fuselage
@@ -655,12 +713,9 @@ def build_fuselage():
                     Polyline(*_ellipse_pts(half_w, half_h), close=True)
                 make_face()
         loft()
-    fuse = part.part
-    # Bays for the two ruddervator servos, in the tail boom rather than in the
-    # V-tail panels -- see _tail_servo_bay for why the panels cannot take them.
-    for sgn in (+1.0, -1.0):
-        fuse = fuse - _tail_servo_bay(sgn)
-    return fuse
+    # The ruddervator servos moved into the V-tail panels, so the fuselage no
+    # longer carries bays for them.
+    return part.part
 
 
 # ---------------------------------------------------------------------------
@@ -734,6 +789,9 @@ def build_tail(cut: bool = True):
     g = CONTROL_GAP_MM / 1000.0
     for sgn in (+1.0, -1.0):
         out = out - _ruddervator_cutter(sgn, g)
+        # Servo bay in the fixed part of the panel, same arrangement as the
+        # aileron bay in the wing.
+        out = out - _tail_servo_bay(sgn)
     return out
 
 

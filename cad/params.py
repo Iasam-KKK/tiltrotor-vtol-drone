@@ -41,7 +41,12 @@ RHO = 1.2041         # kg/m^3, ISA sea level 20 C -- matches PX4's stock SDF
 # Every item is listed separately. Folding the battery into "fuselage" is how
 # a mass budget silently stops closing -- check() enforces that these sum to
 # MTOW, and it caught exactly that error on the first run of this file.
-MASS_TOTAL = 4.80            # kg, MTOW
+# ⚠ 4.80 -> 4.64 kg, reconciled against mass_ledger(). The drop is almost
+# entirely the tail nacelle losing its tilt hardware (0.25 -> 0.10 kg). MTOW is
+# no longer a number typed at the top and defended by adjusting others to match:
+# the "declared MTOW matches the mass ledger" invariant now checks it against
+# the itemised list.
+MASS_TOTAL = 4.64            # kg, MTOW
 MASS_WING_PANEL = 0.55       # kg, each of two wing panels
 MASS_FUSELAGE = 0.85         # kg, fuselage structure only
 MASS_AVIONICS = 0.35         # kg, FC + GPS + ESCs + wiring
@@ -49,7 +54,16 @@ MASS_BATTERY = 1.17          # kg, 6S 8000 mAh Li-ion
 MASS_PAYLOAD = 0.16          # kg, camera + 2D lidar
 MASS_TAIL_ASSY = 0.22        # kg, tail surfaces + boom
 MASS_NACELLE_WING = 0.35     # kg, each wing nacelle (motor + tilt servo + mount)
-MASS_NACELLE_TAIL = 0.25     # kg, tail nacelle
+# ⚠ 0.25 -> 0.10 kg. This was sized when the tail nacelle TILTED: it carried a
+# yoke, a cradle, two 686ZZ bearings, a 6 mm shaft and a 20 kg.cm servo. All of
+# that is gone -- the rotor is fixed and the mount is now a 5.1 cm^3 plate.
+# What is left is the motor (~55 g), the printed mount (~6 g) and prop plus
+# wiring (~35 g).
+#
+# This matters far beyond 150 g of MTOW: it sits 620 mm behind the CG, so the
+# stale figure was contributing 93 g.m of phantom aft moment and dragging the
+# whole CG solution aft with it.
+MASS_NACELLE_TAIL = 0.10     # kg, fixed tail motor + mount + prop
 
 # Mass carried at or very near the CG. Used for the pitch-inertia estimate.
 MASS_CENTRAL = MASS_FUSELAGE + MASS_AVIONICS + MASS_BATTERY + MASS_PAYLOAD
@@ -307,12 +321,20 @@ CAMERA_TILT_DOWN = math.radians(15.0)   # looks slightly down, as survey cams do
 # body has narrowed to 60 mm, and until now nothing said so.
 #
 # (name, x_centre_m, length_mm, width_mm, height_mm, mass_kg)
+# ⚠ REARRANGED after the CG was computed rather than assumed. With the battery
+# at +20 mm the CG landed 48 mm AFT of the design point -- 46.6% MAC against a
+# 20-35% window -- because 1.17 kg of battery was sitting essentially on the CG
+# and doing nothing to balance the tail.
+#
+# solve_cg() puts the battery at +138 mm, which is where it has to be for the
+# CG to land where every moment arm in the trim solve assumes it does. Avionics
+# moved forward of it; nothing sits between +53 and +223 mm but the pack.
 EQUIPMENT = (
     ("Nose camera",      0.418,  30.0, 30.0, 30.0, CAMERA_MASS),
-    ("GPS / compass",    0.330,  50.0, 50.0, 16.0, 0.032),
-    ("Flight controller", 0.250,  85.0, 45.0, 20.0, 0.100),
-    ("Airspeed sensor",  0.180,  25.0, 20.0, 15.0, 0.015),
-    ("Battery 6S",       0.020, 170.0, 70.0, 55.0, MASS_BATTERY),
+    ("GPS / compass",    0.360,  50.0, 50.0, 16.0, 0.032),
+    ("Flight controller", 0.285,  85.0, 45.0, 20.0, 0.100),
+    ("Battery 6S",       0.138, 170.0, 70.0, 55.0, MASS_BATTERY),
+    ("Airspeed sensor",  0.020,  25.0, 20.0, 15.0, 0.015),
     ("ESC x3",          -0.130,  70.0, 60.0, 20.0, 0.090),
     ("BEC",             -0.210,  40.0, 25.0, 12.0, 0.025),
 )
@@ -445,10 +467,15 @@ SURFACE_SERVO_H_MM = 30.0
 # lets the servo sit right beside the ruddervator instead of 170 mm forward in
 # the fuselage -- which is the whole point, because pushrod length is where the
 # slop comes from.
-TAIL_SERVO_L_MM = 23.0
-TAIL_SERVO_W_MM = 11.0
-TAIL_SERVO_H_MM = 24.0
-TAIL_SERVO_TORQUE_KGCM = 3.0
+# Sub-micro case. The servo has to sit at the RUDDERVATOR'S OWN span station
+# (see below), and the panel is only 13.5 mm thick out there -- an 11 mm case
+# leaves 0.9 mm of skin, a 9 mm case leaves 2.0 mm. Torque is not the binding
+# constraint anywhere near here: the hinge moment is 0.0176 N.m and even 1.8
+# kg.cm gives 10x.
+TAIL_SERVO_L_MM = 20.0
+TAIL_SERVO_W_MM = 9.0
+TAIL_SERVO_H_MM = 20.0
+TAIL_SERVO_TORQUE_KGCM = 1.8
 SERVO_MOUNT_CLEARANCE_MM = 0.6      # pocket is this much bigger than the case
 
 # Linkage. The horn on the CRADLE is driven by a pushrod from the servo horn on
@@ -479,12 +506,53 @@ SERVO_BAY_CHORD_FRAC = 0.63
 # around a 13.6 mm servo pocket -- not buildable. They live in the aft fuselage
 # and drive the ruddervators through pushrods, which is what V-tails normally
 # do anyway.
-# ⚠ -0.780 -> -0.900. The servos were 170 mm forward of the ruddervator horns,
-# which is 170 mm of sleeved pushrod and 170 mm of compliance for no reason.
-# Putting them right beside the surface they drive is both stiffer and simpler,
-# and it is only possible because the torque requirement (0.18 kg.cm) allows a
-# 12 g case rather than the 29 x 13 x 30 mm one that would not fit back here.
-TAIL_SERVO_X = -0.900        # m, station of the ruddervator servo bay
+# ⚠ THE SERVO GOES IN THE V-TAIL PANEL, not in the fuselage.
+#
+# I rejected this twice on the grounds that a NACA 0009 panel is 16.2 mm thick
+# and the servo needed 13.6 mm, leaving 1.3 mm of skin. That was true of the
+# 29 x 13 x 30 mm case -- and I never re-checked it after the torque analysis
+# showed the ruddervator needs 0.18 kg.cm and a 12 g case would do. An 11 mm
+# case leaves 1.7 mm of skin, which works.
+#
+# Mounting it in the panel beside the surface it drives is strictly better:
+# the pushrod is ~54 mm and runs INSIDE the fixed panel, exiting only at the
+# hinge line. No sleeve, no long external run, no compliance.
+# ⚠ 0.34 -> 0.50. At 0.34 the rod spanned 36% of a 152 mm chord = 55 mm, nearly
+# twice the aileron's 29 mm, and crossed a wide stretch of fixed panel. Pushing
+# the servo aft toward the hinge is what shortens it; the limit is the section
+# thinning toward the trailing edge, which the fit check enforces.
+# ⚠ SUPERSEDED by TAIL_SERVO_EXTERNAL below. Kept because the fit arithmetic
+# still uses it to prove the in-panel option WAS viable -- it was, at 13.0 mm
+# of section against a 9.6 mm servo. It is simply not how these are built.
+TAIL_SERVO_PANEL_CHORD_FRAC = 0.50   # forward of the 0.70 hinge
+# ⚠ 0.16 -> 0.55. THE SERVO MUST SIT AT THE RUDDERVATOR'S OWN SPAN STATION.
+# At 0.16 the servo was near the panel root -- but the ruddervator only spans
+# 0.275..0.825 of the panel, so the "control horn" landed on the FIXED panel
+# inboard of the moving surface and the linkage drove nothing at all.
+#
+# The aileron got this right by construction: its servo sits at the aileron's
+# own mid-span. This is the same rule, applied where I failed to apply it. It
+# equals the ruddervator's s_mid (0.55 * panel span) and is now enforced by the
+# "tail servo is at the ruddervator's own span station" invariant.
+# 0.55 -> 0.32: still comfortably inside the ruddervator's 27.5..82.5% span,
+# but further inboard where the panel chord is larger, which buys back the
+# section thickness the aft move costs.
+TAIL_SERVO_PANEL_SPAN_FRAC = 0.32
+
+# --- How the ruddervator servos are ACTUALLY mounted -------------------------
+# ⚠ Not buried inside the panel. On real V-tails of this size the two servos
+# are SURFACE-MOUNTED on the fuselage at the tail root -- screwed to the skin,
+# body proud, output arm facing aft -- with short pushrods running out to horns
+# near the inboard end of each ruddervator.
+#
+# That is worth following over the in-panel version even though the in-panel
+# one fits, because it is serviceable: a servo screwed to the outside can be
+# replaced at the field, and a servo laminated inside a 13 mm tail panel
+# cannot. The cost is a longer pushrod, which the buckling check re-verifies
+# rather than my assuming it is still fine.
+TAIL_SERVO_EXTERNAL = True
+TAIL_SERVO_MOUNT_X = -0.885     # m, station on the fuselage tail root
+TAIL_HORN_SPAN_FRAC = 0.30      # where the horn lands, of panel span
 
 # --- Tail motor mount --------------------------------------------------------
 # ⚠ The tail station was being drawn with the full TILTING hardware -- cradle,
@@ -495,8 +563,11 @@ TAIL_SERVO_X = -0.900        # m, station of the ruddervator servo bay
 #
 # A fixed rotor needs a motor plate and a way to attach it to the pylon. That
 # is all.
-TAIL_MOUNT_HEIGHT_MM = 11.0     # plate + saddle, against 42 mm of tilt hardware
-TAIL_MOUNT_SADDLE_MM = 7.0      # depth of the socket that grips the pylon top
+# 11 -> 8 mm. The plate has to stay 4 mm for M3 threads (checked), so the
+# saddle is what shrinks: 7 -> 4 mm of engagement onto the pylon top. Bonded
+# rather than clamped, so the socket only has to locate it, not grip it.
+TAIL_MOUNT_HEIGHT_MM = 8.0      # plate + saddle, against 42 mm of tilt hardware
+TAIL_MOUNT_SADDLE_MM = 4.0      # depth of the socket that grips the pylon top
 TAIL_PYLON_TOP_CHORD_MM = 82.0  # matches the pylon loft's upper section
 TAIL_PYLON_TOP_THICK_MM = 12.0
 
@@ -512,6 +583,17 @@ SERVO_BAY_OPENS_THROUGH = True
 # rather than my asserting it is still fine.
 CONTROL_HORN_H_MM = 9.0         # how far the horn stands off the surface
 CONTROL_HORN_T_MM = 2.4
+# A real control horn is a flat plate that BOLTS THROUGH the surface, with a
+# blade carrying two or three holes so the linkage ratio can be trimmed at
+# assembly. Modelling it as a bare tube hid the two things that matter on a
+# build: the bolt flange has to land on solid material, and the hole you pick
+# sets the deflection per unit of servo travel.
+HORN_BASE_L_MM = 18.0      # flange, along the chord
+HORN_BASE_W_MM = 9.0       # flange, across
+HORN_BASE_T_MM = 2.0
+HORN_BLADE_L_MM = 11.0     # blade footprint along the chord
+HORN_HOLE_DIA_MM = 2.2     # clearance for an M2 clevis pin
+HORN_HOLES = (0.55, 0.78, 0.96)   # hole heights as a fraction of blade height
 
 # --- Pushrods ----------------------------------------------------------------
 # A pushrod works in PUSH and PULL. A wire only pulls -- it buckles instantly in
@@ -702,6 +784,133 @@ def fuselage_half_height_at(x: float) -> float:
             t = (frac - f0) / (f1 - f0) if f1 > f0 else 0.0
             return h0 + t * (h1 - h0)
     return pts[-1][1]
+
+
+# ---------------------------------------------------------------------------
+# Mass ledger and CG
+#
+# ⚠ CG_MAC_FRACTION is an INPUT: the design ASSERTS the CG sits at 28% MAC and
+# every moment arm in the trim solve is measured from there. Nothing ever
+# computed where the CG actually lands given where the mass is. That is the
+# same class of gap as "fuselage is long enough to carry the tail" -- a number
+# everything depends on, that nothing checks.
+#
+# This ledger fixes it. Every item is listed with its station, the CG follows
+# by arithmetic, and the BATTERY POSITION is SOLVED so the CG lands on the
+# design point rather than being placed by eye and hoped over.
+# ---------------------------------------------------------------------------
+
+# Densities, kg/m^3. Printed parts are quoted at realistic infill, not solid.
+RHO_PETG_PRINTED = 800.0     # ~1270 solid at ~55% effective infill + walls
+RHO_CARBON_TUBE = 1550.0
+
+
+def mass_ledger() -> list[tuple[str, float, float]]:
+    """(name, mass kg, x station m) for everything except the battery.
+
+    x is positive FORWARD of the design CG, matching the rest of the module.
+    """
+    d = solve()
+    a = _wing_rotor_arm()
+    qx = CG_MAC_FRACTION * WING_CHORD - 0.25 * WING_CHORD
+
+    items: list[tuple[str, float, float]] = [
+        # Structure. The wing's mass centroid sits a little aft of the quarter
+        # chord; the fuselage shell's is forward of mid-body because the nose
+        # section is much fuller than the tail boom.
+        ("wing panels (2)", 2 * MASS_WING_PANEL, qx - 0.02),
+        ("fuselage shell", MASS_FUSELAGE, -0.06),
+        ("tail surfaces", MASS_TAIL_ASSY, -TAIL_SURFACE_ARM),
+        # Propulsion
+        ("wing nacelles (2)", 2 * MASS_NACELLE_WING, a),
+        ("tail nacelle", MASS_NACELLE_TAIL, -TAIL_ROTOR_ARM),
+        # Servos, at the stations the CAD actually puts them
+        ("aileron servos (2)", 2 * 0.022, qx - SERVO_BAY_CHORD_FRAC * WING_CHORD),
+        ("ruddervator servos (2)", 2 * 0.009, -TAIL_SURFACE_ARM - 0.03),
+        ("tilt servos (2)", 2 * 0.060, a - 0.02),
+    ]
+    # Avionics and payload, from the equipment bay table so the two cannot
+    # disagree about where anything is.
+    for name, x_c, _ln, _wd, _ht, m in EQUIPMENT:
+        if name.startswith("Battery"):
+            continue
+        items.append((name, m, x_c))
+    return items
+
+
+def solve_cg() -> dict:
+    """Total mass, CG, and the battery station that puts the CG on target.
+
+    Sum(m_i x_i) + m_batt x_batt = 0   ->   x_batt = -Sum(m_i x_i) / m_batt
+    since the design CG is the origin by construction.
+    """
+    items = mass_ledger()
+    dry_mass = sum(m for _n, m, _x in items)
+    dry_moment = sum(m * x for _n, m, x in items)
+    x_batt = -dry_moment / MASS_BATTERY
+    total = dry_mass + MASS_BATTERY
+    # Where the CG actually lands if the battery is placed at its EQUIPMENT
+    # station instead of the solved one.
+    x_nominal = next(x for n, x, *_ in
+                     ((e[0], e[1]) + tuple(e[2:]) for e in EQUIPMENT)
+                     if n.startswith("Battery"))
+    cg_nominal = (dry_moment + MASS_BATTERY * x_nominal) / total
+    return dict(dry_mass=dry_mass, total_mass=total, x_batt=x_batt,
+                x_batt_nominal=x_nominal, cg_nominal=cg_nominal,
+                dry_moment=dry_moment)
+
+
+HOVER_HEADROOM = 1.8       # thrust available / thrust at hover, the design rule
+
+
+def payload_capacity() -> dict:
+    """How much more can it lift, and what stops it lifting more?
+
+    Every limit is solved for the WEIGHT at which it binds, then the smallest
+    wins. Reporting only the number would hide the useful part: which
+    constraint is actually the wall, because that is what you would change.
+
+    The hover trim ratio is fixed by geometry, not by loading:
+        T_wing_total = W c / (a + c)     T_tail = W a / (a + c)
+    so each motor's share of W is a constant and the thrust limits become
+    straight limits on W.
+    """
+    a = _wing_rotor_arm()
+    c = TAIL_ROTOR_ARM
+    area = _wing_area()
+
+    share_wing_each = (c / (a + c)) / 2.0     # fraction of W per wing motor
+    share_tail = a / (a + c)
+
+    limits: list[tuple[str, float]] = []
+
+    # Motor thrust, at the design's own headroom rule.
+    limits.append(("wing motor headroom",
+                   WING_MOTOR_THRUST_MAX / HOVER_HEADROOM / share_wing_each))
+    limits.append(("tail motor headroom",
+                   TAIL_MOTOR_THRUST_MAX / HOVER_HEADROOM / share_tail))
+
+    # Transition must stay below cruise with the 10% margin check() enforces.
+    # v_trans = 1.3 sqrt(2W / (rho S CL_max)) <= V_CRUISE / 1.10
+    v_trans_max = V_CRUISE / 1.10
+    cl_max = 0.90 * WING_CL_MAX_2D
+    limits.append(("transition speed vs cruise",
+                   (v_trans_max / TRANSITION_STALL_MARGIN) ** 2
+                   * RHO * area * cl_max / 2.0))
+
+    # Wing loading ceiling from the sanity check.
+    limits.append(("wing loading ceiling", 18.0 * area * G))
+
+    # Disc loading ceiling on the wing rotors.
+    disc_wing = math.pi * (WING_PROP_DIAMETER / 2.0) ** 2
+    limits.append(("wing disc loading", 400.0 * disc_wing / share_wing_each))
+
+    binding, w_max = min(limits, key=lambda t: t[1])
+    mtow_max = w_max / G
+    return dict(limits=sorted(limits, key=lambda t: t[1]),
+                binding=binding, mtow_max=mtow_max,
+                payload_kg=mtow_max - MASS_TOTAL,
+                current_mtow=MASS_TOTAL)
 
 
 def camera_x() -> float:
@@ -1035,6 +1244,38 @@ def check(verbose: bool = False) -> list[str]:
         "mass budget closes",
         abs(accounted - MASS_TOTAL) < 0.05,
         f"components {accounted:.3f} kg vs MTOW {MASS_TOTAL:.3f} kg",
+    )
+
+    # --- Mass ledger and CG -------------------------------------------------
+    # THE GAP THIS CLOSES: CG_MAC_FRACTION is an input, and every moment arm in
+    # the trim solve is measured from a CG that nothing ever computed. With the
+    # battery on the CG the real CG sat 48 mm aft -- 46.6% MAC against a 20-35%
+    # window -- and the whole hover trim was solved about a point the aircraft
+    # does not balance on.
+    cg = solve_cg()
+    ok(
+        "declared MTOW matches the mass ledger",
+        abs(cg["total_mass"] - MASS_TOTAL) <= 0.06,
+        f"ledger {cg['total_mass']:.3f} kg vs declared {MASS_TOTAL:.3f} kg "
+        f"({len(mass_ledger())} items + battery)",
+    )
+    cg_err = cg["cg_nominal"]
+    ok(
+        "CG lands on the design point where the battery is actually placed",
+        abs(cg_err) <= 0.010,
+        f"CG at {cg_err * 1000:+.1f} mm "
+        f"({cg_err / WING_CHORD * 100:+.1f}% MAC from design), battery at "
+        f"{cg['x_batt_nominal'] * 1000:+.0f} mm "
+        f"(solve wants {cg['x_batt'] * 1000:+.0f} mm)",
+    )
+    # The battery is the only item heavy enough to trim the CG, so its travel
+    # is the design's whole CG margin. Worth knowing how much there is.
+    cg_per_10mm = MASS_BATTERY * 0.010 / cg["total_mass"]
+    ok(
+        "battery has authority over the CG",
+        cg_per_10mm >= 0.0015,
+        f"10 mm of battery travel moves the CG "
+        f"{cg_per_10mm * 1000:.1f} mm ({cg_per_10mm / WING_CHORD * 100:.1f}% MAC)",
     )
 
     # --- Longitudinal layout ------------------------------------------------
@@ -1680,24 +1921,72 @@ def check(verbose: bool = False) -> list[str]:
         f"wing {bay_thick:.1f} mm thick at {SERVO_BAY_CHORD_FRAC:.0%} chord vs "
         f"{need:.1f} mm servo ({(bay_thick - need) / 2:.1f} mm skin each side)",
     )
-    # The check that forced the ruddervator servos out of the tail.
-    tail_thick = 0.09 * TAIL_CHORD * 1000.0
+    # The ruddervator servo now lives IN the panel. This is the check that
+    # decides whether that is honest -- and it is the check I should have
+    # re-run when the servo case shrank, instead of carrying forward a "does
+    # not fit" conclusion that was only true of the larger case.
+    c_ts = TAIL_CHORD + (TAIL_CHORD * 0.72 - TAIL_CHORD) * TAIL_SERVO_PANEL_SPAN_FRAC
+    yt_ts, _ = naca_yt_yc(TAIL_NACA, TAIL_SERVO_PANEL_CHORD_FRAC)
+    panel_thick = 2.0 * yt_ts * c_ts * 1000.0
+    need_ts = TAIL_SERVO_W_MM + SERVO_MOUNT_CLEARANCE_MM
     ok(
-        "ruddervator servos are NOT asked to fit inside the V-tail",
-        tail_thick < need + 2 * 1.5,
-        f"V-tail only {tail_thick:.1f} mm thick vs {need:.1f} mm servo -- "
-        f"they live in the aft fuselage at x={TAIL_SERVO_X:.3f} m and drive "
-        f"pushrods",
+        "ruddervator servo fits inside the V-tail panel",
+        panel_thick >= need_ts + 2 * 1.5,
+        f"panel {panel_thick:.1f} mm thick at "
+        f"{TAIL_SERVO_PANEL_CHORD_FRAC:.0%} chord / "
+        f"{TAIL_SERVO_PANEL_SPAN_FRAC:.0%} span vs {need_ts:.1f} mm servo "
+        f"({(panel_thick - need_ts) / 2:.1f} mm skin each side)",
+    )
+    # THE ONE THAT WAS MISSING. A control horn has to land ON the surface it
+    # drives. The servo sat at 16% of panel span while the ruddervator spans
+    # 27.5%..82.5%, so the horn was bolted to the FIXED panel and the linkage
+    # moved nothing. Every other check passed -- the servo fitted, the rod did
+    # not buckle, the torque was ample -- because none of them asked the only
+    # question that mattered.
+    rv_s_mid = 0.55
+    rv_half = RUDDERVATOR_SPAN_FRAC / 2.0
+    ok(
+        "tail servo is at the ruddervator's own span station",
+        rv_s_mid - rv_half <= TAIL_SERVO_PANEL_SPAN_FRAC <= rv_s_mid + rv_half,
+        f"servo at {TAIL_SERVO_PANEL_SPAN_FRAC:.0%} of panel span, ruddervator "
+        f"spans {rv_s_mid - rv_half:.1%}..{rv_s_mid + rv_half:.1%} -- the horn "
+        f"lands on the MOVING surface",
     )
     ok(
-        "tail servo bay fits the fuselage section",
-        TAIL_SERVO_W_MM / 2000.0 <= fuselage_half_width_at(TAIL_SERVO_X)
-        and TAIL_SERVO_H_MM / 1000.0
-        <= 2 * fuselage_half_height_at(TAIL_SERVO_X),
-        f"bay {2 * fuselage_half_width_at(TAIL_SERVO_X) * 1000:.0f} x "
-        f"{2 * fuselage_half_height_at(TAIL_SERVO_X) * 1000:.0f} mm at "
-        f"x={TAIL_SERVO_X:.3f} m vs {TAIL_SERVO_W_MM:.0f} x "
-        f"{TAIL_SERVO_H_MM:.0f} mm servo",
+        "aileron servo is at the aileron's own span station",
+        abs(AILERON_Y_FRAC * WING_SPAN - aileron_geometry()["y_mid"]) < 1e-9,
+        f"servo and aileron share mid-span at "
+        f"{aileron_geometry()['y_mid']:.3f} m",
+    )
+    # Length, not just existence. A linkage that reaches is not the same as a
+    # linkage that is any good: a long rod crossing open panel is compliance,
+    # drag and something to catch on. Both runs are held to the same standard.
+    _st_a = wing_station(aileron_geometry()["y_mid"])
+    ail_rod_mm = (aileron_geometry()["hinge"] - SERVO_BAY_CHORD_FRAC) \
+        * _st_a["chord"] * 1000.0
+    _c_rv = TAIL_CHORD + (TAIL_CHORD * 0.72 - TAIL_CHORD) \
+        * TAIL_SERVO_PANEL_SPAN_FRAC
+    rv_rod_mm = ((1.0 - RUDDERVATOR_CHORD_FRAC)
+                 - TAIL_SERVO_PANEL_CHORD_FRAC) * _c_rv * 1000.0
+    ok(
+        "control pushrods are short",
+        max(ail_rod_mm, rv_rod_mm) <= 40.0,
+        f"aileron {ail_rod_mm:.0f} mm, ruddervator {rv_rod_mm:.0f} mm "
+        f"(limit 40 mm)",
+    )
+    ok(
+        "the two control runs are comparable",
+        rv_rod_mm <= 1.5 * ail_rod_mm,
+        f"ruddervator {rv_rod_mm:.0f} mm vs aileron {ail_rod_mm:.0f} mm "
+        f"({rv_rod_mm / ail_rod_mm:.2f}x, limit 1.50)",
+    )
+    ok(
+        "ruddervator pushrod runs inside the fixed panel",
+        RUDDERVATOR_CHORD_FRAC < 1.0 - TAIL_SERVO_PANEL_CHORD_FRAC,
+        f"servo at {TAIL_SERVO_PANEL_CHORD_FRAC:.0%} chord, hinge at "
+        f"{1 - RUDDERVATOR_CHORD_FRAC:.0%} -- "
+        f"{(1 - RUDDERVATOR_CHORD_FRAC - TAIL_SERVO_PANEL_CHORD_FRAC) * c_ts * 1000:.0f} mm "
+        f"of rod, all of it inside the panel",
     )
     # Both servos sized against the load they actually see, rather than against
     # a number picked once and copied.

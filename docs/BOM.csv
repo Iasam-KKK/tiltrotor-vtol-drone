@@ -1,6 +1,6 @@
 part,spec,qty,supplier,unit_usd,ext_usd,note
-"Brushless motor, wing nacelle","28xx class, >= 38 N static thrust (3.87 kgf)",2,T-Motor / SunnySky / generic,28.0,56.0,hover draw 18.9 N each
-"Brushless motor, tail nacelle","22xx class, >= 25 N static thrust",1,T-Motor / SunnySky / generic,19.0,19.0,hover draw 9.3 N
+"Brushless motor, wing nacelle","28xx class, >= 38 N static thrust (3.87 kgf)",2,T-Motor / SunnySky / generic,28.0,56.0,hover draw 17.8 N each
+"Brushless motor, tail nacelle","22xx class, >= 25 N static thrust",1,T-Motor / SunnySky / generic,19.0,19.0,hover draw 9.9 N
 "Propeller, wing","13 in (330 mm), CW and CCW pair",2,APC / T-Motor,6.5,13.0,"counter-rotating pair, torque cancels"
 "Propeller, tail",10 in (254 mm),1,APC / T-Motor,5.0,5.0,reaction torque uncompensated; trimmed by wing vectoring
 ESC,30 A BLHeli_32 / AM32,3,generic,14.0,42.0,
@@ -18,6 +18,6 @@ Flight controller,"Pixhawk 6C or 6X, PX4 v1.17.0",1,Holybro,200.0,200.0,6 servo 
 "Camera, nose","1920x1080 @ 30 fps, 78 deg HFOV",1,Arducam / generic,45.0,45.0,"45 g, pitched 15 deg down; forward of every rotor disc"
 GPS / compass,M9N or better,1,Holybro,60.0,60.0,
 Airspeed sensor,"differential pitot, I2C",1,Holybro / Matek,55.0,55.0,NOT optional: PX4 gates transition on airspeed
-Battery,"6S Li-ion, 1170 g",1,generic,95.0,95.0,24% of MTOW
+Battery,"6S Li-ion, 1170 g",1,generic,95.0,95.0,25% of MTOW
 M3 socket cap screws,assorted 8-25 mm,1,generic,9.0,9.0,kit
 "TOTAL (indicative, excl. printing and shipping)",,,,,756.1,prices are estimates
