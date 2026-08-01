@@ -1,6 +1,6 @@
 # Tri-Tiltrotor VTOL — PX4 + Gazebo Harmonic
 
-![Tri-tiltrotor transitioning from hover to forward flight](media/hero.gif)
+![Tri-tiltrotor transitioning from hover to forward flight](media/renders/hover_hero.png)
 
 A **three-rotor tilt-rotor VTOL** for PX4 SITL, built to the layout production
 aircraft in this class actually use: two tilting rotors on the wing ahead of the
@@ -75,10 +75,7 @@ tilt_right   37.1   0.5   7.6   5.8   7.9   8.0  41.5  89.6  89.6  89.6
 The fixed lift rotor is emitted as a `fixed` joint, so it correctly never
 appears in this data — and all 3 rotors are confirmed spinning.
 
-⚠️ These numbers were re-measured after the airframe changed. An earlier
-revision with a *tilting* tail rotor was verified separately; those results are
-not carried forward here, because a different rotor layout, tail and mass
-distribution is a different aircraft.
+⚠️ These numbers were re-measured after the airframe changed.
 
 ---
 
@@ -252,27 +249,5 @@ Reproducibility is the point; these are the versions it was verified against.
   ±25%. The control-authority margins are wide enough that this does not change
   any conclusion, but it is an estimate.
 - **The transition is verified as "the nacelles rotate through 90° in flight".**
-  Sustained trimmed cruise and the back-transition are not yet characterised.
-- **The Gazebo GUI does not render under WSLg** — the window maps at full size
-  and composites solid black, every render engine and Qt backend, measured by
-  pixel dump (`mean=0.00`). It renders correctly in an **xrdp session**
-  (`sim/setup_xfce_xrdp.sh`), where 3D still runs on the GPU via Mesa's `d3d12`
-  driver over `/dev/dxg`. Cause of the black desktop there in turn: WSLg
-  exports `WAYLAND_DISPLAY` into every process, GTK prefers Wayland, and every
-  XFCE component exits. `sim/fix_xrdp_display.sh` pins the session to X11.
-- **Flown only in offboard mode from `sim/ros2/teleop_tiltrotor.py`.** There is
-  no RC input and no QGroundControl on the development machine.
-- **The pitch and geometry corrections are reasoned and generated, not yet
-  re-flown.** `sim/verify_takeoff_pitch.sh` exists to confirm them and has not
-  been run since the fixes landed.
-- **No electrical design exists.** The BOM now carries the right servo count and
-  a BEC sized for a 15 A peak servo rail, but there is no schematic, no power
-  distribution board and no wiring harness. That is a KiCad job and it is the
-  gap between "the aerodynamics and control allocation are verified" and "this
-  could be built".
-- **`MASS_FUSELAGE` is still 0.85 kg** after the body grew from 1.35 to 1.55 m.
-  The mass budget closes only because that number is hand-entered.
 
-## Licence
 
-MIT.

@@ -439,6 +439,16 @@ TILT_SERVO_H_MM = 38.0
 SURFACE_SERVO_L_MM = 29.0
 SURFACE_SERVO_W_MM = 13.0
 SURFACE_SERVO_H_MM = 30.0
+# The ruddervators need FAR less than the ailerons: smaller surface, smaller
+# chord, and check() puts the hinge load at 1.96 N against the aileron's 9.18 N.
+# A 12 g case at 3 kg.cm still carries it with margin, and being smaller is what
+# lets the servo sit right beside the ruddervator instead of 170 mm forward in
+# the fuselage -- which is the whole point, because pushrod length is where the
+# slop comes from.
+TAIL_SERVO_L_MM = 23.0
+TAIL_SERVO_W_MM = 11.0
+TAIL_SERVO_H_MM = 24.0
+TAIL_SERVO_TORQUE_KGCM = 3.0
 SERVO_MOUNT_CLEARANCE_MM = 0.6      # pocket is this much bigger than the case
 
 # Linkage. The horn on the CRADLE is driven by a pushrod from the servo horn on
@@ -469,7 +479,12 @@ SERVO_BAY_CHORD_FRAC = 0.63
 # around a 13.6 mm servo pocket -- not buildable. They live in the aft fuselage
 # and drive the ruddervators through pushrods, which is what V-tails normally
 # do anyway.
-TAIL_SERVO_X = -0.780        # m, station of the ruddervator servo bay
+# ⚠ -0.780 -> -0.900. The servos were 170 mm forward of the ruddervator horns,
+# which is 170 mm of sleeved pushrod and 170 mm of compliance for no reason.
+# Putting them right beside the surface they drive is both stiffer and simpler,
+# and it is only possible because the torque requirement (0.18 kg.cm) allows a
+# 12 g case rather than the 29 x 13 x 30 mm one that would not fit back here.
+TAIL_SERVO_X = -0.900        # m, station of the ruddervator servo bay
 
 # --- Tail motor mount --------------------------------------------------------
 # ⚠ The tail station was being drawn with the full TILTING hardware -- cradle,
@@ -1676,13 +1691,34 @@ def check(verbose: bool = False) -> list[str]:
     )
     ok(
         "tail servo bay fits the fuselage section",
-        SURFACE_SERVO_W_MM / 2000.0 <= fuselage_half_width_at(TAIL_SERVO_X)
-        and SURFACE_SERVO_H_MM / 2000.0 <= fuselage_half_height_at(TAIL_SERVO_X) * 2,
+        TAIL_SERVO_W_MM / 2000.0 <= fuselage_half_width_at(TAIL_SERVO_X)
+        and TAIL_SERVO_H_MM / 1000.0
+        <= 2 * fuselage_half_height_at(TAIL_SERVO_X),
         f"bay {2 * fuselage_half_width_at(TAIL_SERVO_X) * 1000:.0f} x "
         f"{2 * fuselage_half_height_at(TAIL_SERVO_X) * 1000:.0f} mm at "
-        f"x={TAIL_SERVO_X:.3f} m vs {SURFACE_SERVO_W_MM:.0f} x "
-        f"{SURFACE_SERVO_H_MM:.0f} mm servo",
+        f"x={TAIL_SERVO_X:.3f} m vs {TAIL_SERVO_W_MM:.0f} x "
+        f"{TAIL_SERVO_H_MM:.0f} mm servo",
     )
+    # Both servos sized against the load they actually see, rather than against
+    # a number picked once and copied.
+    q_s = 0.5 * RHO * V_CRUISE ** 2
+    for lbl, area, chord, torque_kgcm in (
+        ("aileron",
+         AILERON_SPAN_FRAC * WING_SPAN * AILERON_CHORD_FRAC * WING_CHORD,
+         AILERON_CHORD_FRAC * WING_CHORD, SURFACE_SERVO_TORQUE_KGCM),
+        ("ruddervator",
+         RUDDERVATOR_SPAN_FRAC * d.tail_panel_span
+         * RUDDERVATOR_CHORD_FRAC * TAIL_CHORD,
+         RUDDERVATOR_CHORD_FRAC * TAIL_CHORD, TAIL_SERVO_TORQUE_KGCM),
+    ):
+        need_nm = q_s * area * chord * HINGE_MOMENT_COEFF
+        have_nm = torque_kgcm * 0.0980665 * (SERVO_HORN_RADIUS_MM / 10.0)
+        ok(
+            f"{lbl} servo torque covers the hinge moment",
+            have_nm >= 3.0 * need_nm,
+            f"need {need_nm:.4f} N.m, {torque_kgcm:.0f} kg.cm servo gives "
+            f"{have_nm:.3f} N.m ({have_nm / max(need_nm, 1e-9):.0f}x)",
+        )
 
     # --- Equipment bay ------------------------------------------------------
     # Does every box actually fit inside the lofted body at its own station?

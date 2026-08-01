@@ -272,23 +272,49 @@ def build_wing(cut: bool = True):
         # one twists the surface badly. A distinct winglet with a visible
         # junction is both cleaner geometry and what most aircraft actually
         # have.
+        # --- BLENDED winglet --------------------------------------------------
+        # ⚠ Two problems made the junction read as "barely connected", and only
+        # one of them was the hard corner:
+        #
+        #   1. The winglet went straight from 0 to 72 deg cant in one step, so
+        #      the wing and the winglet met at a crease with no blend.
+        #   2. The winglet root section was drawn at ZERO twist while the wing
+        #      tip carries WING_TWIST_TIP (-2 deg washout). The two sections at
+        #      the same station were therefore DIFFERENT SHAPES -- the surfaces
+        #      genuinely did not line up, which is why it looked detached
+        #      rather than merely sharp.
+        #
+        # Now lofted through several stations with the cant ramping smoothly
+        # (t^0.7, so it leaves the wing nearly tangent and curls up), and the
+        # root section matches the wing tip exactly -- same chord, same twist,
+        # zero cant. That makes it one continuous surface.
         h = P.WINGLET_HEIGHT_FRAC * semi
-        cant = P.WINGLET_CANT
-        uy, uz = sign * math.cos(cant), math.sin(cant)
-        root = (dx, sign * semi, dz)
+        n_bl = 6
+        px_, py_, pz_ = dx, sign * semi, dz
         with BuildPart() as wl:
-            for frac, c, tw in ((0.0, c_tip, 0.0),
-                                (1.0, c_tip * P.WINGLET_TAPER, P.WINGLET_TOE)):
-                origin = (root[0] - frac * h * math.tan(P.WINGLET_SWEEP),
-                          root[1] + frac * h * uy,
-                          root[2] + frac * h * uz)
-                plane = Plane(origin=origin, x_dir=(1, 0, 0), z_dir=(0, uy, uz))
+            for i in range(n_bl + 1):
+                t = i / n_bl
+                phi = P.WINGLET_CANT * (t ** 0.7)
+                c_i = c_tip + (c_tip * P.WINGLET_TAPER - c_tip) * t
+                tw_i = P.WING_TWIST_TIP + P.WINGLET_TOE * t
+                uy_i, uz_i = sign * math.cos(phi), math.sin(phi)
+                plane = Plane(origin=(px_, py_, pz_), x_dir=(1, 0, 0),
+                              z_dir=(0, uy_i, uz_i))
                 with BuildSketch(plane):
                     with BuildLine():
-                        Polyline(*section_points(P.WING_NACA, c, tw, n=60),
+                        Polyline(*section_points(P.WING_NACA, c_i, tw_i, n=60),
                                  close=True)
                     make_face()
-            loft()
+                if i < n_bl:
+                    # Step along the curving path using the MID-segment cant,
+                    # so the discretised path follows the intended curve rather
+                    # than cutting its corners.
+                    ds = h / n_bl
+                    phi_m = P.WINGLET_CANT * (((i + 0.5) / n_bl) ** 0.7)
+                    px_ -= ds * math.tan(P.WINGLET_SWEEP)
+                    py_ += sign * ds * math.cos(phi_m)
+                    pz_ += ds * math.sin(phi_m)
+            loft(ruled=False)
 
         return part.part + wl.part
 
@@ -547,9 +573,12 @@ def build_linkages():
     for sgn in (+1.0, -1.0):
         rv = P.ruddervator_geometry(sgn)
         _, uy, uz = rv["axis"]
-        # Point on the hinge line, well inboard on the moving surface.
+        # ⚠ The base was ON the hinge line -- the very leading edge of the
+        # moving surface -- so the horn touched the panel at a single edge and
+        # read as detached. Move it AFT into the ruddervator body so it is
+        # visibly, and actually, attached to the thing it drives.
         s_horn = 0.18 * d_t.tail_panel_span
-        base = (rv["x"], s_horn * uy, 0.010 + s_horn * uz)
+        base = (rv["x"] - 0.018, s_horn * uy, 0.010 + s_horn * uz)
         # Panel normal, picking the branch that points BELOW the panel on BOTH
         # sides. Writing it as (0, uz, -uy) looks symmetric and is not: uy
         # changes sign with the panel but uz does not, so the right-hand horn
