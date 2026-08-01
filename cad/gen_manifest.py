@@ -53,6 +53,15 @@ def build(tilt_deg: float) -> dict:
         # it, so only the stub ahead of the leading edge is visible.
         dict(name="booms", mesh=f"{MESHES}/booms.stl", scale=1.0,
              loc=[0, 0, 0], rot=[0, 0, 0], material="carbon"),
+        # Control horns and pushrods. Without these the servo bays read as
+        # empty slots and nothing visibly connects a servo to a surface.
+        dict(name="linkages", mesh=f"{MESHES}/linkages.stl", scale=1.0,
+             loc=[0, 0, 0], rot=[0, 0, 0], material="carbon"),
+        # Primary structure. The shells are fairings; these carry the aircraft.
+        dict(name="structure", mesh=f"{MESHES}/structure.stl", scale=1.0,
+             loc=[0, 0, 0], rot=[0, 0, 0], material="carbon"),
+        dict(name="formers", mesh=f"{MESHES}/formers.stl", scale=1.0,
+             loc=[0, 0, 0], rot=[0, 0, 0], material="printed"),
     ]
 
     # --- control surfaces ---------------------------------------------------
@@ -102,14 +111,28 @@ def build(tilt_deg: float) -> dict:
             yoke_z = wing_z - 0.018
             hub_z = yoke_z + 0.030
 
-        parts.append(dict(
-            name=f"nacelle_yoke_{label}", mesh=f"{CADOUT}/nacelle_yoke.stl",
-            scale=0.001, loc=[px, py, yoke_z], rot=[0, 0, 0],
-            material="printed"))
-        parts.append(dict(
-            name=f"nacelle_cradle_{label}", mesh=f"{CADOUT}/nacelle_cradle.stl",
-            scale=0.001, loc=[px, py, hub_z], rot=[0, tilt, 0],
-            material="printed"))
+        if is_tail:
+            # ⚠ The tail used to be drawn with the full TILTING assembly --
+            # yoke, cradle, bearings, shaft, servo -- inherited from the layout
+            # where this rotor tilted. It does not: the SDF emits a `fixed`
+            # joint and PX4 has CA_ROTOR2_TILT = 0. A fixed rotor needs a motor
+            # plate and a saddle onto the pylon, which is 11 mm and 5.9 cm^3
+            # against 42 mm and 38.9 cm^3 of mechanism doing nothing.
+            parts.append(dict(
+                name="tail_motor_mount",
+                mesh=f"{CADOUT}/tail_motor_mount.stl",
+                scale=0.001, loc=[px, py, hub_z], rot=[0, 0, 0],
+                material="printed"))
+        else:
+            parts.append(dict(
+                name=f"nacelle_yoke_{label}", mesh=f"{CADOUT}/nacelle_yoke.stl",
+                scale=0.001, loc=[px, py, yoke_z], rot=[0, 0, 0],
+                material="printed"))
+            parts.append(dict(
+                name=f"nacelle_cradle_{label}",
+                mesh=f"{CADOUT}/nacelle_cradle.stl",
+                scale=0.001, loc=[px, py, hub_z], rot=[0, tilt, 0],
+                material="printed"))
         # Propeller: blades lie in the plane normal to the rotor axis, so it
         # inherits the same tilt. Offset along the (tilted) axis so it sits in
         # front of the motor rather than inside it.

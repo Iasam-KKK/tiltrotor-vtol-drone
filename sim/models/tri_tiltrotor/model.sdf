@@ -198,6 +198,43 @@
       <parent>base_link</parent>
       <child>nacelle_cam_link</child>
     </joint>
+
+    <link name="nose_cam_link">
+      <pose relative_to="base_link">0.477800 0 0 0 0.261799 0</pose>
+      <inertial>
+        <mass>0.045000</mass>
+        <inertia><ixx>1e-06</ixx><iyy>1e-06</iyy><izz>1e-06</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+      </inertial>
+      <visual name="nose_cam_visual">
+        <geometry><box><size>0.030 0.030 0.030</size></box></geometry>
+        <material>
+          <ambient>0.1 0.1 0.12 1</ambient>
+          <diffuse>0.15 0.15 0.18 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="nose_cam" type="camera">
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>nose_cam/image_raw</topic>
+        <gz_frame_id>nose_cam_link</gz_frame_id>
+        <camera>
+          <horizontal_fov>1.361357</horizontal_fov>
+          <image>
+            <width>1920</width>
+            <height>1080</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip><near>0.05</near><far>3000</far></clip>
+          <noise><type>gaussian</type><mean>0</mean><stddev>0.005</stddev></noise>
+        </camera>
+      </sensor>
+    </link>
+    <joint name="nose_cam_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>nose_cam_link</child>
+    </joint>
     <link name="motor_left">
       <pose>0.172800 0.400000 0.045000 0 0 0</pose>
       <inertial>

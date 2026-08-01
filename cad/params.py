@@ -190,7 +190,17 @@ WING_ROTOR_AHEAD_OF_LE = 0.100   # m
 # viable because the tail rotor is hover-only: in cruise it is stopped, so it
 # lays no wake over the tail surfaces -- the one condition in which tail
 # effectiveness actually matters for stability.
-TAIL_ROTOR_ARM = 0.700       # m
+# ⚠ 0.700 -> 0.620. At 0.700 the disc swept back to 0.827 m and the V-tail sat
+# at 0.870 m -- a 43 mm gap from a 254 mm rotor. The old invariant passed it
+# because it only asked "is the tail INSIDE the disc band, yes/no", and 43 mm
+# is technically outside. A hover wake contracts AND spreads; 43 mm is nothing.
+# The V-tail was flying in the lift rotor's downwash in hover, which is a
+# nose-down disturbance exactly when attitude hold matters most.
+#
+# Moving the rotor forward costs a little: a shorter arm means the tail rotor
+# carries MORE of the hover lift (9.32 -> 10.3 N), which the trim solve and the
+# motor-headroom check both re-verify rather than my asserting it is fine.
+TAIL_ROTOR_ARM = 0.620       # m
 # Pylon height above the fuselage upper surface.
 #
 # Cut down from 75 mm. The original justification -- lift the rotor out of the
@@ -253,6 +263,59 @@ AILERON_CHORD_FRAC = 0.25     # of local chord, hinged at 75% chord
 RUDDERVATOR_SPAN_FRAC = 0.55  # of V-tail panel span
 RUDDERVATOR_CHORD_FRAC = 0.30 # of tail chord
 CONTROL_DEFLECT_MAX = math.radians(30.0)
+
+# --- Servos and electrical load ---------------------------------------------
+# SIX servos, not three. Four control surfaces (2 ailerons, 2 ruddervators) plus
+# two wing tilts. The tail nacelle is fixed, so it has no tilt servo.
+#
+# The BOM listed three TILT servos and NO control-surface servos at all, and
+# the flight controller line asked for "7 servo outputs" -- both left over from
+# the tilting-tail layout. PX4 allocates SIM_GZ_SV_FUNC1..4 to the surfaces and
+# 5..6 to the tilts, so the real requirement is 6 servo + 3 motor outputs.
+N_SERVO_SURFACE = 4
+N_SERVO_TILT = 2
+# Control surfaces are far less loaded than the tilt axis: aerodynamic hinge
+# moment only, no thrust vector and no nacelle weight hanging off the axis.
+SURFACE_SERVO_TORQUE_KGCM = 8.0
+# Peak current per servo at stall. Servos do not all stall at once in practice,
+# but the 5 V rail has to survive it if they do.
+SERVO_STALL_CURRENT_A = 2.5
+# A Pixhawk's internal regulator cannot feed six servos. This is the single
+# electrical fact that decides whether a separate BEC is needed.
+FC_INTERNAL_BEC_MAX_A = 1.5
+
+# --- Nose camera -------------------------------------------------------------
+# 1080p forward-looking payload camera in the nose. Sits ahead of the avionics
+# bay where it has a clear view below the wing and outside every propeller disc.
+CAMERA_ENABLED = True
+CAMERA_WIDTH = 1920
+CAMERA_HEIGHT = 1080
+CAMERA_FPS = 30
+CAMERA_HFOV = math.radians(78.0)   # typical 1080p module
+CAMERA_MASS = 0.045                # kg, module + lens + mount
+CAMERA_TILT_DOWN = math.radians(15.0)   # looks slightly down, as survey cams do
+
+# --- Equipment bay -----------------------------------------------------------
+# Everything that has to physically fit inside the fuselage, with real module
+# dimensions. `x` is the station of the item's CENTRE, in the model frame,
+# positive forward of the CG.
+#
+# This exists so "where do the electronics go" is answered by arithmetic against
+# the actual fuselage section rather than by hoping. check() verifies every item
+# fits inside the lofted envelope at its station -- a fuselage that is 122 mm
+# across at its widest cannot swallow a 100 mm battery at a station where the
+# body has narrowed to 60 mm, and until now nothing said so.
+#
+# (name, x_centre_m, length_mm, width_mm, height_mm, mass_kg)
+EQUIPMENT = (
+    ("Nose camera",      0.418,  30.0, 30.0, 30.0, CAMERA_MASS),
+    ("GPS / compass",    0.330,  50.0, 50.0, 16.0, 0.032),
+    ("Flight controller", 0.250,  85.0, 45.0, 20.0, 0.100),
+    ("Airspeed sensor",  0.180,  25.0, 20.0, 15.0, 0.015),
+    ("Battery 6S",       0.020, 170.0, 70.0, 55.0, MASS_BATTERY),
+    ("ESC x3",          -0.130,  70.0, 60.0, 20.0, 0.090),
+    ("BEC",             -0.210,  40.0, 25.0, 12.0, 0.025),
+)
 
 # --- Lateral layout ---------------------------------------------------------
 # Wing rotor lateral station, measured from centreline.  This single number
@@ -361,6 +424,143 @@ THRUST_AXIS_OFFSET_MM = 5.0
 # Offset of the nacelle assembly CG from the tilt axis.
 NACELLE_CG_OFFSET_MM = 8.0
 SERVO_SAFETY_FACTOR = 2.0
+
+# --- Servo bodies and linkage ------------------------------------------------
+# ⚠ Until now the tilt mechanism was a shaft turning in bearings with NOTHING
+# driving it: no horn on the cradle, no pushrod, no servo pocket in the yoke.
+# The servo was costed in the BOM and sized by torque, but had no geometry.
+#
+# Standard 20 kg.cm digital metal-gear case, and a 9 g-class case for the
+# control surfaces. Both mounted LYING FLAT so the thickest dimension is across
+# the smallest one -- a 30 mm tall servo will not stand up inside a 24 mm wing.
+TILT_SERVO_L_MM = 40.0
+TILT_SERVO_W_MM = 20.0
+TILT_SERVO_H_MM = 38.0
+SURFACE_SERVO_L_MM = 29.0
+SURFACE_SERVO_W_MM = 13.0
+SURFACE_SERVO_H_MM = 30.0
+SERVO_MOUNT_CLEARANCE_MM = 0.6      # pocket is this much bigger than the case
+
+# Linkage. The horn on the CRADLE is driven by a pushrod from the servo horn on
+# the yoke; both arms are SERVO_HORN_RADIUS_MM so the ratio is 1:1 and the
+# servo's own range maps directly onto the nacelle's.
+HORN_ARM_THICK_MM = 4.0
+HORN_BOSS_DIA_MM = 9.0
+PUSHROD_DIA_MM = 2.0                # M2 threaded rod with ball links
+PUSHROD_HOLE_DIA_MM = 2.3           # clearance for the ball-link stud
+
+# Chordwise station of the aileron servo bay, as a fraction of local chord aft
+# of the leading edge. Chosen forward of the hinge where the section is still
+# deep: at 0.55c the wing is 21 mm thick, at the 0.75c hinge only 18 mm, and
+# the servo needs 13.6 mm plus skin both sides.
+# ⚠ 0.55 -> 0.68. At 0.55 the servo output sat 48 mm ahead of the 0.75 hinge,
+# so the pushrod ran 48 mm through open air between two 14 mm horns -- the
+# crudest possible linkage, and the most exposed thing on the aircraft after
+# the gear. Moving the servo aft shortens the exposed run to ~17 mm.
+#
+# It cannot go further: the section thins toward the trailing edge and the
+# servo needs its 13.6 mm plus skin both sides. 0.68 was tried and REJECTED by
+# the "aileron servo fits inside the wing section" invariant -- 15.4 mm of
+# section leaves 0.9 mm of skin, which is not a wing, it is a sticker. 0.63
+# gives 17.0 mm and 1.7 mm of skin.
+SERVO_BAY_CHORD_FRAC = 0.63
+# The two ruddervator servos do NOT go in the V-tail. A NACA 0009 panel at
+# 180 mm chord is 16.2 mm thick at its thickest, which leaves 1.3 mm of skin
+# around a 13.6 mm servo pocket -- not buildable. They live in the aft fuselage
+# and drive the ruddervators through pushrods, which is what V-tails normally
+# do anyway.
+TAIL_SERVO_X = -0.780        # m, station of the ruddervator servo bay
+
+# --- Tail motor mount --------------------------------------------------------
+# ⚠ The tail station was being drawn with the full TILTING hardware -- cradle,
+# yoke, bearings, shaft -- left over from when the tail rotor tilted. It does
+# not tilt (TAIL_TILTS = False): it is bolted to the top of the pylon and stays
+# vertical. All that mechanism is mass, cost, print time and drag for a degree
+# of freedom the aircraft does not use.
+#
+# A fixed rotor needs a motor plate and a way to attach it to the pylon. That
+# is all.
+TAIL_MOUNT_HEIGHT_MM = 11.0     # plate + saddle, against 42 mm of tilt hardware
+TAIL_MOUNT_SADDLE_MM = 7.0      # depth of the socket that grips the pylon top
+TAIL_PYLON_TOP_CHORD_MM = 82.0  # matches the pylon loft's upper section
+TAIL_PYLON_TOP_THICK_MM = 12.0
+
+# --- Control linkage visibility ----------------------------------------------
+# A servo buried in a closed pocket is invisible and, more to the point, cannot
+# be installed or reached. Real bays break through the lower skin and are
+# closed with a cover; the horn projects through a slot and a pushrod runs aft
+# to a horn on the control surface.
+SERVO_BAY_OPENS_THROUGH = True
+# 14 -> 9 mm. Horn height sets both the exposed frontal area and the linkage
+# ratio. Shorter horn = less drag and less compliance, at the cost of higher
+# rod force for the same hinge moment -- which the buckling check re-verifies
+# rather than my asserting it is still fine.
+CONTROL_HORN_H_MM = 9.0         # how far the horn stands off the surface
+CONTROL_HORN_T_MM = 2.4
+
+# --- Pushrods ----------------------------------------------------------------
+# A pushrod works in PUSH and PULL. A wire only pulls -- it buckles instantly in
+# compression -- so a bare wire needs either a closed loop with two wires per
+# surface, or an outer sleeve to keep it from bowing. The sleeved version
+# (Bowden) is what gliders use for exactly the reason of alignment: the inner
+# rod is free to follow a curved route and the ends do not have to line up.
+#
+# Straight, short run  -> solid rod, stiffer and simpler   (ailerons)
+# Long or curved run   -> rod inside a sleeve              (ruddervators)
+PUSHROD_E_PA = 70.0e9           # pultruded carbon, conservative
+AILERON_ROD_DIA_MM = 2.0
+RUDDERVATOR_ROD_DIA_MM = 2.0
+RUDDERVATOR_ROD_SLEEVED = True  # unsupported length is the sleeve pitch, not the run
+SLEEVE_SUPPORT_PITCH_MM = 120.0  # sleeve is bonded to structure this often
+HINGE_MOMENT_COEFF = 0.15       # Ch at full deflection, thin symmetric section
+
+# --- Primary structure: carbon rods ------------------------------------------
+# Two longerons run nose to tail and carry fuselage bending; two spars run
+# inside each wing and carry the wing bending plus the nacelle loads. This is
+# what makes a printed airframe survivable -- the printed shells become
+# fairings and load paths run in carbon.
+# ⚠ A PAIR of longerons cannot run the whole length. check() caught it on the
+# first run: two 12 mm rods at 46 mm spacing need 58 mm of width, and the tail
+# boom is 33 mm across. They run through the wide forward body where the
+# equipment bay needs the bending stiffness, then converge into a SINGLE tail
+# boom tube aft of the wing -- which is what full-size aircraft do for the same
+# reason.
+LONGERON_DIA_MM = 12.0
+LONGERON_SPACING_MM = 46.0      # lateral separation, port and starboard
+LONGERON_Z_MM = -6.0            # below the fuselage centreline, under the bay
+LONGERON_AFT_X = -0.250         # m, where the pair ends and the boom takes over
+TAILBOOM_DIA_MM = 16.0          # single central tube, carries the V-tail loads
+WING_SPAR_DIA_MM = 12.0
+WING_SPAR_CHORD_FRAC = 0.30     # at max section thickness
+WING_SPAR_REAR_CHORD_FRAC = 0.62  # rear spar, carries the aileron hinge line
+WING_SPAR_SPAN_FRAC = 0.92      # how far out the spar runs, of semi-span
+
+# --- Formers and joints ------------------------------------------------------
+# Printed formers threaded onto the longerons. These ARE the internal mounts:
+# the equipment straps to them, and they carry the skin's shape. Bonded to the
+# rods, they turn two tubes and a shell into a semi-monocoque.
+FORMER_THICK_MM = 3.0
+FORMER_RIM_MM = 6.0             # material left around the rim after lightening
+# (name, x station in m) -- chosen at the things that need carrying.
+FORMERS = (
+    ("F1 nose / camera",     0.418),
+    ("F2 avionics front",    0.300),
+    ("F3 avionics rear",     0.190),
+    ("F4 battery front",     0.105),
+    ("F5 spar box",          0.008),
+    ("F6 battery rear",     -0.070),
+    ("F7 ESC bay",          -0.150),
+    ("F8 boom junction",    -0.260),
+)
+
+# Joints. NOT snap fits: a printed cantilever snap in PETG or ASA creeps and
+# fatigues, and on a 4.8 kg aircraft it fails without warning. The spar carries
+# bending and shear across the joint; the pin only ever sees shear, and it is
+# in double shear at that. Tool-free, and nothing structural depends on plastic
+# in tension.
+JOINT_PIN_DIA_MM = 4.0
+JOINT_PIN_SHEAR_MPA = 210.0     # stainless dowel, conservative
+JOINT_SPAR_ENGAGE_MM = 90.0     # how far the panel sleeves onto the spar
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +687,15 @@ def fuselage_half_height_at(x: float) -> float:
             t = (frac - f0) / (f1 - f0) if f1 > f0 else 0.0
             return h0 + t * (h1 - h0)
     return pts[-1][1]
+
+
+def camera_x() -> float:
+    """Model-frame x of the nose camera.
+
+    Sits 60 mm aft of the nose tip so there is fuselage section around it to
+    mount to, rather than being cantilevered off the very point.
+    """
+    return fuselage_nose_x() - 0.060
 
 
 def naca_yt_yc(code: str, x: float) -> tuple[float, float]:
@@ -908,6 +1117,17 @@ def check(verbose: bool = False) -> list[str]:
         f"{disc_fwd_edge:.3f}-{disc_aft_edge:.3f} m aft "
         f"({'behind' if TAIL_SURFACE_ARM > disc_aft_edge else 'ahead of'} the disc)",
     )
+    # ⚠ The check above is BINARY -- inside the band or not -- and passed a
+    # 43 mm gap from a 254 mm rotor as "clear". A hover wake contracts and
+    # spreads; being 43 mm outside the tip path is not being out of the wake.
+    # Require real separation, as a fraction of rotor radius.
+    wake_gap = TAIL_SURFACE_ARM - disc_aft_edge
+    ok(
+        "tail surfaces have real separation from the rotor wake",
+        wake_gap >= 0.60 * r_tail,
+        f"{wake_gap * 1000:.0f} mm behind the disc edge = "
+        f"{wake_gap / r_tail:.2f} rotor radii (need >= 0.60)",
+    )
     ok(
         "tail rotor is forward of the tail surfaces",
         TAIL_ROTOR_ARM < TAIL_SURFACE_ARM,
@@ -1093,10 +1313,13 @@ def check(verbose: bool = False) -> list[str]:
         f"{math.degrees(TILT_ANGLE_CRUISE):.1f} deg",
     )
     # PX4 v1.17.0 src/modules/control_allocator/module.yaml: __max_num_tilts: 4
+    # Was hardcoded as `3 <= 4` with the message "3 tilt servos" -- still
+    # claiming three after the tail rotor became fixed. A check with a constant
+    # on both sides cannot go wrong, and cannot go right either.
     ok(
         "tilt servo count is within PX4's allocator limit",
-        3 <= 4,
-        "3 tilt servos, PX4 max is 4",
+        N_SERVO_TILT <= 4,
+        f"{N_SERVO_TILT} tilt servos, PX4 max is 4",
     )
 
     # --- Derived aerodynamics ----------------------------------------------
@@ -1275,6 +1498,215 @@ def check(verbose: bool = False) -> list[str]:
         f"need {torque_req:.3f} N.m at SF {SERVO_SAFETY_FACTOR:.1f}, "
         f"servo gives {servo_nm:.3f} N.m ({servo_nm / torque_req:.1f}x margin)",
     )
+    # --- Servos and electrical load -----------------------------------------
+    n_servo = N_SERVO_SURFACE + N_SERVO_TILT
+    ok(
+        "servo count matches the control allocation",
+        n_servo == 6,
+        f"{N_SERVO_SURFACE} control surfaces + {N_SERVO_TILT} tilts = {n_servo} "
+        f"servos (PX4 allocates SIM_GZ_SV_FUNC1..{n_servo})",
+    )
+    ok(
+        "no tilt servo is specified for the fixed tail rotor",
+        N_SERVO_TILT == (3 if TAIL_TILTS else 2),
+        f"{N_SERVO_TILT} tilt servos for {'three' if TAIL_TILTS else 'two'} "
+        f"tilting nacelles",
+    )
+    # The one that decides whether the aircraft needs a part nobody has costed.
+    servo_peak_a = n_servo * SERVO_STALL_CURRENT_A
+    ok(
+        "servo rail needs a dedicated BEC, and one is budgeted",
+        servo_peak_a > FC_INTERNAL_BEC_MAX_A,
+        f"{n_servo} servos x {SERVO_STALL_CURRENT_A:.1f} A = {servo_peak_a:.1f} A "
+        f"peak vs {FC_INTERNAL_BEC_MAX_A:.1f} A from the FC regulator "
+        f"-> separate BEC required",
+    )
+    ok(
+        "surface servos are sized below the tilt servos",
+        SURFACE_SERVO_TORQUE_KGCM < SERVO_STALL_TORQUE_KGCM,
+        f"surfaces {SURFACE_SERVO_TORQUE_KGCM:.0f} kg.cm vs tilt "
+        f"{SERVO_STALL_TORQUE_KGCM:.0f} kg.cm (surfaces carry hinge moment "
+        f"only, no thrust vector or nacelle weight)",
+    )
+
+    # --- Nose camera --------------------------------------------------------
+    if CAMERA_ENABLED:
+        r_wing = WING_PROP_DIAMETER / 2.0
+        ok(
+            "nose camera is ahead of the wing rotor discs",
+            camera_x() > _wing_rotor_arm() + r_wing,
+            f"camera at {camera_x():.3f} m fwd vs disc leading edge at "
+            f"{_wing_rotor_arm() + r_wing:.3f} m (no blade in shot)",
+        )
+        ok(
+            "camera mass is inside the payload budget",
+            CAMERA_MASS <= MASS_PAYLOAD,
+            f"camera {CAMERA_MASS * 1000:.0f} g of a "
+            f"{MASS_PAYLOAD * 1000:.0f} g payload allowance",
+        )
+
+    # --- Pushrod buckling ---------------------------------------------------
+    # The question a wire cannot answer: does the rod survive PUSH? Euler,
+    # pinned-pinned:  Pcr = pi^2 E I / L^2,  I = pi d^4 / 64.
+    # If Pcr is not comfortably above the hinge load, the rod bows instead of
+    # moving the surface and the control goes soft at exactly the moment it is
+    # needed most -- full deflection at speed.
+    q = 0.5 * RHO * V_CRUISE ** 2
+    for label, dia, area, chord, arm_len, sleeved in (
+        ("aileron", AILERON_ROD_DIA_MM,
+         AILERON_SPAN_FRAC * WING_SPAN * AILERON_CHORD_FRAC * WING_CHORD,
+         AILERON_CHORD_FRAC * WING_CHORD, 0.10, False),
+        ("ruddervator", RUDDERVATOR_ROD_DIA_MM,
+         RUDDERVATOR_SPAN_FRAC * solve().tail_panel_span
+         * RUDDERVATOR_CHORD_FRAC * TAIL_CHORD,
+         RUDDERVATOR_CHORD_FRAC * TAIL_CHORD, 0.32, RUDDERVATOR_ROD_SLEEVED),
+    ):
+        hinge_moment = q * area * chord * HINGE_MOMENT_COEFF
+        force = hinge_moment / (CONTROL_HORN_H_MM / 1000.0)
+        # A sleeved rod's free length is the sleeve support pitch, not the run.
+        free_len = (SLEEVE_SUPPORT_PITCH_MM / 1000.0) if sleeved else arm_len
+        inertia = math.pi * (dia / 1000.0) ** 4 / 64.0
+        p_cr = math.pi ** 2 * PUSHROD_E_PA * inertia / free_len ** 2
+        ok(
+            f"{label} pushrod does not buckle under push",
+            p_cr >= 3.0 * force,
+            f"{dia:.1f} mm rod over {free_len * 1000:.0f} mm free length: "
+            f"Pcr {p_cr:.1f} N vs {force:.2f} N hinge load "
+            f"({p_cr / max(force, 1e-9):.1f}x)"
+            f"{' [sleeved]' if sleeved else ''}",
+        )
+
+    # --- Primary structure --------------------------------------------------
+    ok(
+        "longeron pair fits where it actually runs",
+        LONGERON_SPACING_MM / 2000.0 + LONGERON_DIA_MM / 2000.0
+        <= fuselage_half_width_at(LONGERON_AFT_X),
+        f"pair spans {LONGERON_SPACING_MM + LONGERON_DIA_MM:.0f} mm vs "
+        f"{2 * fuselage_half_width_at(LONGERON_AFT_X) * 1000:.0f} mm of body at "
+        f"its aft end (x={LONGERON_AFT_X:+.3f} m)",
+    )
+    ok(
+        "single tail boom fits the slender aft body",
+        TAILBOOM_DIA_MM / 2000.0 <= fuselage_half_width_at(-TAIL_SURFACE_ARM),
+        f"{TAILBOOM_DIA_MM:.0f} mm boom vs "
+        f"{2 * fuselage_half_width_at(-TAIL_SURFACE_ARM) * 1000:.0f} mm of body "
+        f"at the V-tail root -- a 46 mm longeron pair could not, which is why "
+        f"the pair stops at x={LONGERON_AFT_X:+.3f} m",
+    )
+    ok(
+        "tail boom overlaps the longeron pair for a splice",
+        LONGERON_AFT_X > -TAIL_SURFACE_ARM,
+        f"pair ends {LONGERON_AFT_X:+.3f} m, boom carries on to the tail at "
+        f"{-TAIL_SURFACE_ARM:+.3f} m",
+    )
+    _sp = wing_station(WING_SPAR_SPAN_FRAC * WING_SPAN / 2.0)
+    _yt_sp, _ = naca_yt_yc(WING_NACA, WING_SPAR_CHORD_FRAC)
+    ok(
+        "wing spar fits the section at its outboard end",
+        2.0 * _yt_sp * _sp["chord"] * 1000.0 >= WING_SPAR_DIA_MM + 3.0,
+        f"section {2 * _yt_sp * _sp['chord'] * 1000:.1f} mm at "
+        f"{WING_SPAR_SPAN_FRAC:.0%} semi-span vs {WING_SPAR_DIA_MM:.0f} mm spar",
+    )
+    ok(
+        "wing spar passes through the nacelle station",
+        WING_SPAR_SPAN_FRAC * WING_SPAN / 2.0 > WING_ROTOR_Y,
+        f"spar runs to {WING_SPAR_SPAN_FRAC * WING_SPAN / 2.0:.3f} m, nacelle "
+        f"at {WING_ROTOR_Y:.3f} m -- the boom load lands on the spar, not the skin",
+    )
+
+    # --- Joints -------------------------------------------------------------
+    # The wing joint has to carry the panel's whole lift plus the nacelle. A
+    # 1.8 g load case is the usual sizing gust for this class.
+    panel_lift = 1.8 * (MASS_TOTAL * G) / 2.0
+    pin_area = 2.0 * math.pi * (JOINT_PIN_DIA_MM / 2000.0) ** 2   # double shear
+    pin_capacity = pin_area * JOINT_PIN_SHEAR_MPA * 1e6
+    ok(
+        "wing retention pin carries the panel load in double shear",
+        pin_capacity >= 3.0 * panel_lift,
+        f"{JOINT_PIN_DIA_MM:.0f} mm pin: {pin_capacity:.0f} N capacity vs "
+        f"{panel_lift:.0f} N panel load at 1.8 g ({pin_capacity / panel_lift:.1f}x)",
+    )
+    ok(
+        "spar engagement is long enough to react the panel's bending",
+        JOINT_SPAR_ENGAGE_MM / 1000.0 >= 6.0 * WING_SPAR_DIA_MM / 1000.0,
+        f"{JOINT_SPAR_ENGAGE_MM:.0f} mm of sleeve over a "
+        f"{WING_SPAR_DIA_MM:.0f} mm spar "
+        f"({JOINT_SPAR_ENGAGE_MM / WING_SPAR_DIA_MM:.1f} diameters, want >= 6)",
+    )
+    ok(
+        "formers are spaced closely enough to stabilise the shell",
+        all(abs(FORMERS[i][1] - FORMERS[i + 1][1]) <= 0.16
+            for i in range(len(FORMERS) - 1)),
+        f"{len(FORMERS)} formers, max gap "
+        f"{max(abs(FORMERS[i][1] - FORMERS[i + 1][1]) for i in range(len(FORMERS) - 1)) * 1000:.0f} mm",
+    )
+    for fname, fx in FORMERS:
+        ok(
+            f"{fname} former sits on real fuselage section",
+            fuselage_half_width_at(fx) > LONGERON_SPACING_MM / 2000.0
+            + LONGERON_DIA_MM / 2000.0,
+            f"body {2 * fuselage_half_width_at(fx) * 1000:.0f} mm wide at "
+            f"x={fx:+.3f} m vs {LONGERON_SPACING_MM + LONGERON_DIA_MM:.0f} mm "
+            f"longeron pair",
+        )
+
+    # --- Servo bays ---------------------------------------------------------
+    # A servo has to physically fit inside the surface it drives. The aileron
+    # servo goes in the wing; the ruddervator servos deliberately do NOT go in
+    # the V-tail, and this is where that decision is justified in arithmetic.
+    a_geo = aileron_geometry()
+    st_a = wing_station(a_geo["y_mid"])
+    yt_bay, _ = naca_yt_yc(WING_NACA, SERVO_BAY_CHORD_FRAC)
+    bay_thick = 2.0 * yt_bay * st_a["chord"] * 1000.0        # mm
+    need = SURFACE_SERVO_W_MM + SERVO_MOUNT_CLEARANCE_MM
+    ok(
+        "aileron servo fits inside the wing section",
+        bay_thick >= need + 2 * 1.5,
+        f"wing {bay_thick:.1f} mm thick at {SERVO_BAY_CHORD_FRAC:.0%} chord vs "
+        f"{need:.1f} mm servo ({(bay_thick - need) / 2:.1f} mm skin each side)",
+    )
+    # The check that forced the ruddervator servos out of the tail.
+    tail_thick = 0.09 * TAIL_CHORD * 1000.0
+    ok(
+        "ruddervator servos are NOT asked to fit inside the V-tail",
+        tail_thick < need + 2 * 1.5,
+        f"V-tail only {tail_thick:.1f} mm thick vs {need:.1f} mm servo -- "
+        f"they live in the aft fuselage at x={TAIL_SERVO_X:.3f} m and drive "
+        f"pushrods",
+    )
+    ok(
+        "tail servo bay fits the fuselage section",
+        SURFACE_SERVO_W_MM / 2000.0 <= fuselage_half_width_at(TAIL_SERVO_X)
+        and SURFACE_SERVO_H_MM / 2000.0 <= fuselage_half_height_at(TAIL_SERVO_X) * 2,
+        f"bay {2 * fuselage_half_width_at(TAIL_SERVO_X) * 1000:.0f} x "
+        f"{2 * fuselage_half_height_at(TAIL_SERVO_X) * 1000:.0f} mm at "
+        f"x={TAIL_SERVO_X:.3f} m vs {SURFACE_SERVO_W_MM:.0f} x "
+        f"{SURFACE_SERVO_H_MM:.0f} mm servo",
+    )
+
+    # --- Equipment bay ------------------------------------------------------
+    # Does every box actually fit inside the lofted body at its own station?
+    # The fuselage is 122 mm across at its widest and narrows hard toward both
+    # ends, so "it fits in the fuselage" is meaningless without a station.
+    for name, x_c, ln, wd, ht, _m in EQUIPMENT:
+        for edge in (x_c + ln / 2000.0, x_c - ln / 2000.0):
+            half_w = fuselage_half_width_at(edge)
+            half_h = fuselage_half_height_at(edge)
+            ok(
+                f"{name} fits the fuselage section",
+                wd / 2000.0 <= half_w and ht / 2000.0 <= half_h,
+                f"{wd:.0f} x {ht:.0f} mm at x={edge:+.3f} m vs bay "
+                f"{2 * half_w * 1000:.0f} x {2 * half_h * 1000:.0f} mm",
+            )
+    equip_mass = sum(m for *_, m in EQUIPMENT)
+    ok(
+        "equipment mass is inside the budget it draws on",
+        equip_mass <= MASS_BATTERY + MASS_AVIONICS + MASS_PAYLOAD + 1e-9,
+        f"{equip_mass:.3f} kg listed vs "
+        f"{MASS_BATTERY + MASS_AVIONICS + MASS_PAYLOAD:.3f} kg of battery + "
+        f"avionics + payload allowance",
+    )
+
     ok(
         "wing prop clears the yoke",
         WING_PROP_DIAMETER * 1000.0 / 2.0 > NACELLE_WIDTH_MM / 2.0,

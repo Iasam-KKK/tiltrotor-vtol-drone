@@ -77,6 +77,54 @@
         "material": "carbon"
       },
       {
+        "name": "linkages",
+        "mesh": "sim/models/tri_tiltrotor/meshes/linkages.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "structure",
+        "mesh": "sim/models/tri_tiltrotor/meshes/structure.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "formers",
+        "mesh": "sim/models/tri_tiltrotor/meshes/formers.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
         "name": "aileron_left",
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
         "scale": 1.0,
@@ -239,24 +287,8 @@
         "mirror": true
       },
       {
-        "name": "nacelle_yoke_tail",
-        "mesh": "cad/out/nacelle_yoke.stl",
-        "scale": 0.001,
-        "loc": [
-          -0.7,
-          0.0,
-          0.022141935483870973
-        ],
-        "rot": [
-          0,
-          0,
-          0
-        ],
-        "material": "printed"
-      },
-      {
-        "name": "nacelle_cradle_tail",
-        "mesh": "cad/out/nacelle_cradle.stl",
+        "name": "tail_motor_mount",
+        "mesh": "cad/out/tail_motor_mount.stl",
         "scale": 0.001,
         "loc": [
           -0.7,
@@ -265,7 +297,7 @@
         ],
         "rot": [
           0,
-          0.0,
+          0,
           0
         ],
         "material": "printed"
@@ -367,6 +399,54 @@
         "material": "carbon"
       },
       {
+        "name": "linkages",
+        "mesh": "sim/models/tri_tiltrotor/meshes/linkages.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "structure",
+        "mesh": "sim/models/tri_tiltrotor/meshes/structure.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "formers",
+        "mesh": "sim/models/tri_tiltrotor/meshes/formers.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
         "name": "aileron_left",
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
         "scale": 1.0,
@@ -529,24 +609,8 @@
         "mirror": true
       },
       {
-        "name": "nacelle_yoke_tail",
-        "mesh": "cad/out/nacelle_yoke.stl",
-        "scale": 0.001,
-        "loc": [
-          -0.7,
-          0.0,
-          0.022141935483870973
-        ],
-        "rot": [
-          0,
-          0,
-          0
-        ],
-        "material": "printed"
-      },
-      {
-        "name": "nacelle_cradle_tail",
-        "mesh": "cad/out/nacelle_cradle.stl",
+        "name": "tail_motor_mount",
+        "mesh": "cad/out/tail_motor_mount.stl",
         "scale": 0.001,
         "loc": [
           -0.7,
@@ -555,7 +619,7 @@
         ],
         "rot": [
           0,
-          0.0,
+          0,
           0
         ],
         "material": "printed"
@@ -657,6 +721,54 @@
         "material": "carbon"
       },
       {
+        "name": "linkages",
+        "mesh": "sim/models/tri_tiltrotor/meshes/linkages.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "structure",
+        "mesh": "sim/models/tri_tiltrotor/meshes/structure.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "formers",
+        "mesh": "sim/models/tri_tiltrotor/meshes/formers.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
         "name": "aileron_left",
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
         "scale": 1.0,
@@ -819,24 +931,8 @@
         "mirror": true
       },
       {
-        "name": "nacelle_yoke_tail",
-        "mesh": "cad/out/nacelle_yoke.stl",
-        "scale": 0.001,
-        "loc": [
-          -0.7,
-          0.0,
-          0.022141935483870973
-        ],
-        "rot": [
-          0,
-          0,
-          0
-        ],
-        "material": "printed"
-      },
-      {
-        "name": "nacelle_cradle_tail",
-        "mesh": "cad/out/nacelle_cradle.stl",
+        "name": "tail_motor_mount",
+        "mesh": "cad/out/tail_motor_mount.stl",
         "scale": 0.001,
         "loc": [
           -0.7,
@@ -845,7 +941,7 @@
         ],
         "rot": [
           0,
-          0.0,
+          0,
           0
         ],
         "material": "printed"

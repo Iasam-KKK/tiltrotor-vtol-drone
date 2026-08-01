@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="831" height="423" viewBox="0 0 831 423">
+<style>text{font-family:DejaVu Sans,Arial,sans-serif}.t{font-size:11px;fill:#222}.s{font-size:9px;fill:#666}.h{font-size:15px;font-weight:600;fill:#111}.d{stroke:#999;stroke-width:0.8;fill:none}</style>
+<rect width="831" height="423" fill="#fbfbfb"/>
+<text class="h" x="90" y="34">Tri-tiltrotor — equipment bay, side view (looking from port)</text>
+<text class="s" x="90" y="52">Generated from cad/params.py. Fuselage outline lofted through 16 stations. All dimensions mm. +x forward.</text>
+<polygon points="90.0,208.1 109.5,198.9 142.1,193.0 194.2,188.4 272.3,186.3 324.4,185.9 376.4,186.7 428.5,188.8 487.1,193.0 539.2,197.6 584.8,202.2 610.8,203.9 649.9,204.8 682.4,205.2 715.0,205.2 741.0,205.6 741.0,217.4 715.0,217.8 682.4,217.8 649.9,218.2 610.8,219.0 584.8,220.7 539.2,225.3 487.1,230.0 428.5,234.2 376.4,236.3 324.4,237.1 272.3,236.7 194.2,234.6 142.1,230.0 109.5,224.1 90.0,214.8" fill="#e9eef2" stroke="#5a6b78" stroke-width="1.6"/>
+<line class="d" x1="90.0" y1="211.5" x2="741.0" y2="211.5" stroke-dasharray="6 4"/>
+<circle cx="315.9" cy="211.5" r="6" fill="none" stroke="#c00" stroke-width="1.4"/>
+<line x1="315.9" y1="205.5" x2="315.9" y2="217.5" stroke="#c00" stroke-width="1.4"/>
+<text class="t" x="324.9" y="201.5" fill="#c00">CG (x=0)</text>
+<rect x="134.0" y="205.2" width="12.6" height="12.6" fill="#c94f4f" fill-opacity="0.75" stroke="#c94f4f" stroke-width="1.2" rx="2"/>
+<rect x="166.8" y="208.1" width="21.0" height="6.7" fill="#4f7fc9" fill-opacity="0.75" stroke="#4f7fc9" stroke-width="1.2" rx="2"/>
+<rect x="193.0" y="207.3" width="35.7" height="8.4" fill="#3f9d5a" fill-opacity="0.75" stroke="#3f9d5a" stroke-width="1.2" rx="2"/>
+<rect x="235.0" y="208.3" width="10.5" height="6.3" fill="#8a6fc9" fill-opacity="0.75" stroke="#8a6fc9" stroke-width="1.2" rx="2"/>
+<rect x="271.8" y="199.9" width="71.4" height="23.1" fill="#c98f3f" fill-opacity="0.75" stroke="#c98f3f" stroke-width="1.2" rx="2"/>
+<rect x="355.8" y="207.3" width="29.4" height="8.4" fill="#4fa8b8" fill-opacity="0.75" stroke="#4fa8b8" stroke-width="1.2" rx="2"/>
+<rect x="395.7" y="209.0" width="16.8" height="5.0" fill="#a8574f" fill-opacity="0.75" stroke="#a8574f" stroke-width="1.2" rx="2"/>
+<text class="t" x="90" y="299" style="font-weight:600">Bay contents — L x W x H, mass, station from CG</text>
+<rect x="90" y="313" width="11" height="11" fill="#c94f4f" fill-opacity="0.75" stroke="#c94f4f"/>
+<text class="t" x="108" y="322">Nose camera — 30 x 30 x 30 mm, 45 g, x = +418 mm <tspan class="s">(bay there: 77 x 86 mm)</tspan></text>
+<line class="d" x1="140.3" y1="211.5" x2="102" y2="318" stroke-dasharray="2 3" stroke="#c94f4f" stroke-opacity="0.5"/>
+<rect x="90" y="330" width="11" height="11" fill="#4f7fc9" fill-opacity="0.75" stroke="#4f7fc9"/>
+<text class="t" x="108" y="339">GPS / compass — 50 x 50 x 16 mm, 32 g, x = +330 mm <tspan class="s">(bay there: 89 x 103 mm)</tspan></text>
+<line class="d" x1="177.3" y1="211.5" x2="102" y2="335" stroke-dasharray="2 3" stroke="#4f7fc9" stroke-opacity="0.5"/>
+<rect x="90" y="347" width="11" height="11" fill="#3f9d5a" fill-opacity="0.75" stroke="#3f9d5a"/>
+<text class="t" x="108" y="356">Flight controller — 85 x 45 x 20 mm, 100 g, x = +250 mm <tspan class="s">(bay there: 96 x 112 mm)</tspan></text>
+<line class="d" x1="210.9" y1="211.5" x2="102" y2="352" stroke-dasharray="2 3" stroke="#3f9d5a" stroke-opacity="0.5"/>
+<rect x="90" y="364" width="11" height="11" fill="#8a6fc9" fill-opacity="0.75" stroke="#8a6fc9"/>
+<text class="t" x="108" y="373">Airspeed sensor — 25 x 20 x 15 mm, 15 g, x = +180 mm <tspan class="s">(bay there: 99 x 116 mm)</tspan></text>
+<line class="d" x1="240.3" y1="211.5" x2="102" y2="369" stroke-dasharray="2 3" stroke="#8a6fc9" stroke-opacity="0.5"/>
+<rect x="90" y="381" width="11" height="11" fill="#c98f3f" fill-opacity="0.75" stroke="#c98f3f"/>
+<text class="t" x="108" y="390">Battery 6S — 170 x 70 x 55 mm, 1170 g, x = +20 mm <tspan class="s">(bay there: 103 x 121 mm)</tspan></text>
+<line class="d" x1="307.5" y1="211.5" x2="102" y2="386" stroke-dasharray="2 3" stroke="#c98f3f" stroke-opacity="0.5"/>
+<rect x="90" y="398" width="11" height="11" fill="#4fa8b8" fill-opacity="0.75" stroke="#4fa8b8"/>
+<text class="t" x="108" y="407">ESC x3 — 70 x 60 x 20 mm, 90 g, x = -130 mm <tspan class="s">(bay there: 100 x 118 mm)</tspan></text>
+<line class="d" x1="370.5" y1="211.5" x2="102" y2="403" stroke-dasharray="2 3" stroke="#4fa8b8" stroke-opacity="0.5"/>
+<rect x="90" y="415" width="11" height="11" fill="#a8574f" fill-opacity="0.75" stroke="#a8574f"/>
+<text class="t" x="108" y="424">BEC — 40 x 25 x 12 mm, 25 g, x = -210 mm <tspan class="s">(bay there: 95 x 113 mm)</tspan></text>
+<line class="d" x1="404.1" y1="211.5" x2="102" y2="420" stroke-dasharray="2 3" stroke="#a8574f" stroke-opacity="0.5"/>
+<text class="t" x="90" y="450">Equipment total 1477 g of a 1680 g budget. Fuselage 1550 mm long, max section 122 mm tall, fineness 12.7.</text>
+<text class="s" x="90" y="467">Servos are NOT in the fuselage: 4 control-surface servos sit in the wing and V-tail bays, 2 tilt servos in the nacelle yokes. Servo rail needs 15 A peak, hence the separate BEC.</text>
+</svg>

@@ -168,6 +168,21 @@ param set-default SIM_GZ_SV_MAXA5 90
 param set-default SIM_GZ_SV_MINA6 -15
 param set-default SIM_GZ_SV_MAXA6 90
 
+# Park the nacelles VERTICAL while disarmed.
+#
+# SIM_GZ_SV's disarmed default is 500 of 0..1000 -- the MIDPOINT of the servo
+# range. On a plain control surface that is sensible (neutral). On a tilt servo
+# spanning -15..90 deg the midpoint is 37.5 deg, so the aircraft
+# sat on the ground with its wing rotors tilted 38 deg FORWARD -- measured at
+# 37.08 deg on the joint_state topic -- and takeoff began by slewing them
+# upright at 45 deg/s WHILE already climbing. During that ~0.8 s the wing
+# rotors carry a large forward thrust component and a reduced vertical one,
+# which is a pitch disturbance at exactly the wrong moment.
+#
+# 0.1429 normalised = 0 deg = thrust straight up.
+param set-default SIM_GZ_SV_DIS5 143
+param set-default SIM_GZ_SV_DIS6 143
+
 
 
 # ---------------------------------------------------------------------------

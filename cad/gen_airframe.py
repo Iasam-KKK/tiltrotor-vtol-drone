@@ -252,6 +252,21 @@ param set-default SIM_GZ_SV_MINA5 {wing_mina:.0f}
 param set-default SIM_GZ_SV_MAXA5 {wing_maxa:.0f}
 param set-default SIM_GZ_SV_MINA6 {wing_mina:.0f}
 param set-default SIM_GZ_SV_MAXA6 {wing_maxa:.0f}
+
+# Park the nacelles VERTICAL while disarmed.
+#
+# SIM_GZ_SV's disarmed default is 500 of 0..1000 -- the MIDPOINT of the servo
+# range. On a plain control surface that is sensible (neutral). On a tilt servo
+# spanning {wing_mina:.0f}..{wing_maxa:.0f} deg the midpoint is {(wing_mina + wing_maxa) / 2:.1f} deg, so the aircraft
+# sat on the ground with its wing rotors tilted {(wing_mina + wing_maxa) / 2:.0f} deg FORWARD -- measured at
+# 37.08 deg on the joint_state topic -- and takeoff began by slewing them
+# upright at {math.degrees(P.TILT_RATE):.0f} deg/s WHILE already climbing. During that ~0.8 s the wing
+# rotors carry a large forward thrust component and a reduced vertical one,
+# which is a pitch disturbance at exactly the wrong moment.
+#
+# {tilt_mc:.4f} normalised = {math.degrees(P.TILT_ANGLE_HOVER):.0f} deg = thrust straight up.
+param set-default SIM_GZ_SV_DIS5 {tilt_mc * 1000:.0f}
+param set-default SIM_GZ_SV_DIS6 {tilt_mc * 1000:.0f}
 {f"param set-default SIM_GZ_SV_MINA7 {tail_mina:.0f}" if P.TAIL_TILTS else ""}
 {f"param set-default SIM_GZ_SV_MAXA7 {tail_maxa:.0f}" if P.TAIL_TILTS else ""}
 """)

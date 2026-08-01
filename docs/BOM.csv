@@ -4,16 +4,20 @@ part,spec,qty,supplier,unit_usd,ext_usd,note
 "Propeller, wing","13 in (330 mm), CW and CCW pair",2,APC / T-Motor,6.5,13.0,"counter-rotating pair, torque cancels"
 "Propeller, tail",10 in (254 mm),1,APC / T-Motor,5.0,5.0,reaction torque uncompensated; trimmed by wing vectoring
 ESC,30 A BLHeli_32 / AM32,3,generic,14.0,42.0,
-Tilt servo,"digital metal-gear, >= 20 kg.cm",3,Savox / MKS / generic,22.0,66.0,7.9x margin over computed tilt load
+Tilt servo,"digital metal-gear, >= 20 kg.cm",2,Savox / MKS / generic,22.0,44.0,8.0x margin over computed tilt load; wing nacelles only
 "Bearing, tilt axis","686ZZ, 6 x 13 x 5 mm",6,generic,1.2,7.2,"two per nacelle; clearance fit, not press"
-Tilt shaft,"6 mm stainless, 60 mm long",3,generic,1.5,4.5,
+Tilt shaft,"6 mm stainless, 60 mm long",2,generic,1.5,3.0,
+Control surface servo,"digital metal-gear, >= 8 kg.cm, 9 g class",4,Savox / MKS / generic,13.0,52.0,2 aileron + 2 ruddervator; mounts in the wing/tail bays
+Servo pushrod + clevis,"M2 threaded rod, ball link",6,generic,1.8,10.8,one per servo
+"BEC, servo rail","6S in, 5-6 V out, >= 10 A continuous",1,Mateksys / generic,18.0,18.0,6 servos x 2.5 A stall = 15 A peak; the FC regulator gives 1.5 A
 Carbon boom,"16 mm OD tube, 400 mm",2,generic,8.0,16.0,wing nacelle mounting
 Printed nacelle cradle,"PETG or ASA, see cad/out/",3,self-printed,0.6,1.8,6.8 cm3 each
 Printed nacelle yoke,"PETG or ASA, see cad/out/",3,self-printed,1.2,3.6,14.2 cm3 each
 Printed fit coupon,"PETG, test print before committing",1,self-printed,0.7,0.7,verifies M3 pattern and bearing seat
-Flight controller,"Pixhawk 6C or 6X, PX4 v1.17.0",1,Holybro,200.0,200.0,7 servo + 3 motor outputs required
+Flight controller,"Pixhawk 6C or 6X, PX4 v1.17.0",1,Holybro,200.0,200.0,6 servo + 3 motor outputs required
+"Camera, nose","1920x1080 @ 30 fps, 78 deg HFOV",1,Arducam / generic,45.0,45.0,"45 g, pitched 15 deg down; forward of every rotor disc"
 GPS / compass,M9N or better,1,Holybro,60.0,60.0,
 Airspeed sensor,"differential pitot, I2C",1,Holybro / Matek,55.0,55.0,NOT optional: PX4 gates transition on airspeed
 Battery,"6S Li-ion, 1170 g",1,generic,95.0,95.0,24% of MTOW
 M3 socket cap screws,assorted 8-25 mm,1,generic,9.0,9.0,kit
-"TOTAL (indicative, excl. printing and shipping)",,,,,653.8,prices are estimates
+"TOTAL (indicative, excl. printing and shipping)",,,,,756.1,prices are estimates

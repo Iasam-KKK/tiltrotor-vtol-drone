@@ -26,8 +26,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from build123d import (
-    Align, BuildLine, BuildPart, BuildSketch, Location, Mode, Plane, Polyline,
-    Vector, export_step, export_stl, extrude, loft, make_face, Rot,
+    Align, Box, BuildLine, BuildPart, BuildSketch, Location, Locations, Mode,
+    Plane, Polyline, Vector, export_step, export_stl, extrude, loft, make_face,
+    Rot,
 )
 
 import params as P
@@ -303,7 +304,287 @@ def build_wing(cut: bool = True):
     g = CONTROL_GAP_MM / 1000.0
     for sgn in (+1.0, -1.0):
         wing = wing - _aileron_cutter(sgn, g)
+        wing = wing - _servo_bay(sgn)
     return wing
+
+
+def _servo_bay(sign: float):
+    """Pocket in the wing for one aileron servo.
+
+    Placed at SERVO_BAY_CHORD_FRAC, forward of the hinge, because that is where
+    the section is still deep enough: 19.8 mm at 55% chord against 18 mm at the
+    75% hinge, for a 13.6 mm servo that needs skin on both sides.
+
+    Lying flat -- the servo's 30 mm height runs SPANWISE, not through the
+    thickness, which no 20 mm wing section could accommodate.
+    """
+    a = P.aileron_geometry()
+    st = P.wing_station(a["y_mid"])
+    c = st["chord"]
+    le_x = st["x_qc"] + 0.25 * c
+    x_c = le_x - P.SERVO_BAY_CHORD_FRAC * c
+    _, yc_bay = P.naca_yt_yc(P.WING_NACA, P.SERVO_BAY_CHORD_FRAC)
+    z_c = st["z"] + yc_bay * c
+
+    cl = P.SERVO_MOUNT_CLEARANCE_MM / 1000.0
+    ln = P.SURFACE_SERVO_L_MM / 1000.0 + cl
+    ht = P.SURFACE_SERVO_H_MM / 1000.0 + cl      # spanwise
+    wd = P.SURFACE_SERVO_W_MM / 1000.0 + cl      # through thickness
+
+    # ⚠ A closed internal void is invisible AND uninstallable. The first version
+    # of this cut a sealed pocket inside the wing: nothing showed in any render
+    # because nothing broke the skin, and there was no way to get a servo into
+    # it or a screwdriver onto it. Real bays open through the LOWER surface and
+    # are closed with a cover. Extending the cut downward past the skin makes
+    # the opening real.
+    depth = wd + (0.04 if P.SERVO_BAY_OPENS_THROUGH else 0.0)
+    z_off = -(depth - wd) / 2.0
+
+    with BuildPart() as bay:
+        with Locations((x_c, sign * a["y_mid"], z_c + z_off)):
+            Box(ln, ht, depth)
+    return bay.part
+
+
+def _tube(p0, p1, radius, n=20):
+    """A straight tube between two points."""
+    dx, dy, dz = (p1[i] - p0[i] for i in range(3))
+    length = math.sqrt(dx * dx + dy * dy + dz * dz)
+    mid = tuple((p0[i] + p1[i]) / 2.0 for i in range(3))
+    axis = (dx / length, dy / length, dz / length)
+    # Any vector not parallel to the axis works as the in-plane reference.
+    ref = (0, 0, 1) if abs(axis[2]) < 0.9 else (1, 0, 0)
+    with BuildPart() as t:
+        plane = Plane(origin=mid, x_dir=ref, z_dir=axis)
+        with BuildSketch(plane):
+            with BuildLine():
+                Polyline(*_ellipse_pts(radius, radius, n), close=True)
+            make_face()
+        extrude(amount=length / 2.0, both=True)
+    return t.part
+
+
+def build_structure():
+    """The carbon primary structure: longerons, tail boom and wing spars.
+
+    This is what actually carries the aircraft. The printed shells become
+    fairings; loads run in carbon.
+
+    ⚠ The longerons do NOT run the whole length. params.check() rejected that
+    on the first attempt -- a 46 mm pair needs 58 mm of width and the tail boom
+    is 33 mm across. They run through the wide forward body where the equipment
+    bay wants the stiffness, and a SINGLE tube carries on aft. Same reason
+    full-size aircraft do it.
+
+    The wing spars are CONTINUOUS THROUGH THE CENTRELINE, angled along the
+    dihedral, meeting in a spar box at F5. That is the whole point: the joint
+    is not at the root, where the bending moment peaks. Each panel sleeves onto
+    the protruding spar and is pinned, so the pin only ever sees shear.
+    """
+    nose = P.fuselage_nose_x()
+    r_lon = P.LONGERON_DIA_MM / 2000.0
+    r_boom = P.TAILBOOM_DIA_MM / 2000.0
+    r_spar = P.WING_SPAR_DIA_MM / 2000.0
+    z_lon = P.LONGERON_Z_MM / 1000.0
+    y_lon = P.LONGERON_SPACING_MM / 2000.0
+
+    parts = []
+
+    # --- fuselage longerons, nose to the boom junction ---
+    for sgn in (+1, -1):
+        parts.append(_tube((nose - 0.030, sgn * y_lon, z_lon),
+                           (P.LONGERON_AFT_X, sgn * y_lon, z_lon), r_lon))
+
+    # --- single tail boom, overlapping the pair for a bonded splice ---
+    parts.append(_tube((P.LONGERON_AFT_X + 0.090, 0.0, z_lon),
+                       (-P.TAIL_SURFACE_ARM - 0.030, 0.0, z_lon), r_boom))
+
+    # --- wing spars, continuous through the centreline along the dihedral ---
+    semi = P.WING_SPAN / 2.0
+    y_tip = P.WING_SPAR_SPAN_FRAC * semi
+    for frac in (P.WING_SPAR_CHORD_FRAC, P.WING_SPAR_REAR_CHORD_FRAC):
+        _, yc = P.naca_yt_yc(P.WING_NACA, frac)
+        for sgn in (+1, -1):
+            st_t = P.wing_station(y_tip)
+            x_t = st_t["x_qc"] + (0.25 - frac) * st_t["chord"]
+            z_t = st_t["z"] + yc * st_t["chord"]
+            st_r = P.wing_station(0.0)
+            x_r = st_r["x_qc"] + (0.25 - frac) * st_r["chord"]
+            z_r = st_r["z"] + yc * st_r["chord"]
+            # Model frame: the wing mesh is offset by quarter_x downstream, so
+            # apply it here too or the spars sit ahead of their own wing.
+            qx = P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD
+            parts.append(_tube((qx + x_r, 0.0, z_r),
+                               (qx + x_t, sgn * y_tip, z_t), r_spar))
+
+    out = parts[0]
+    for p in parts[1:]:
+        out = out + p
+    return out
+
+
+def build_formers():
+    """Printed bulkheads threaded onto the longerons.
+
+    These ARE the internal mounts: equipment straps to them, they hold the
+    shell's shape, and bonded to the rods they turn two tubes plus a skin into
+    a semi-monocoque. Each is the fuselage section at its station, lightened,
+    with holes for whatever passes through it.
+    """
+    t = P.FORMER_THICK_MM / 1000.0
+    rim = P.FORMER_RIM_MM / 1000.0
+    r_lon = P.LONGERON_DIA_MM / 2000.0
+    y_lon = P.LONGERON_SPACING_MM / 2000.0
+    z_lon = P.LONGERON_Z_MM / 1000.0
+
+    parts = []
+    for _name, x in P.FORMERS:
+        hh = P.fuselage_half_height_at(x)
+        hw = P.fuselage_half_width_at(x)
+        with BuildPart() as f:
+            plane = Plane(origin=(x, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+            with BuildSketch(plane):
+                with BuildLine():
+                    Polyline(*_ellipse_pts(hw, hh, 48), close=True)
+                make_face()
+            extrude(amount=t / 2.0, both=True)
+            # Lightening hole -- a former is a ring, not a disc, or it is just
+            # ballast.
+            if hw > rim * 2.2 and hh > rim * 2.2:
+                with BuildSketch(plane):
+                    with BuildLine():
+                        Polyline(*_ellipse_pts(hw - rim, hh - rim, 40),
+                                 close=True)
+                    make_face()
+                extrude(amount=t, both=True, mode=Mode.SUBTRACT)
+            # Longeron holes, back in the rim.
+            for sgn in (+1, -1):
+                with BuildSketch(Plane(origin=(x, sgn * y_lon, z_lon),
+                                       x_dir=(0, 1, 0), z_dir=(1, 0, 0))):
+                    with BuildLine():
+                        Polyline(*_ellipse_pts(r_lon + 0.0004,
+                                               r_lon + 0.0004, 20), close=True)
+                    make_face()
+                extrude(amount=t, both=True, mode=Mode.SUBTRACT)
+        parts.append(f.part)
+
+    out = parts[0]
+    for p in parts[1:]:
+        out = out + p
+    return out
+
+
+def build_linkages():
+    """Control horns and pushrods -- the visible half of every servo run.
+
+    Without these the aircraft has servos hidden in bays connected to control
+    surfaces by nothing at all. Each run is: servo horn (in the bay) ->
+    pushrod -> control horn (on the moving surface).
+
+    Drawn at neutral. They are cosmetic in the simulator -- LiftDrag reads the
+    joint angle, never the linkage -- but they are what makes the mechanism
+    legible, and their absence is what made the servo bays look like they were
+    not there.
+    """
+    a = P.aileron_geometry()
+    st = P.wing_station(a["y_mid"])
+    c = st["chord"]
+    le_x = st["x_qc"] + 0.25 * c
+    x_servo = le_x - P.SERVO_BAY_CHORD_FRAC * c
+    _, yc_bay = P.naca_yt_yc(P.WING_NACA, P.SERVO_BAY_CHORD_FRAC)
+    z_servo = st["z"] + yc_bay * c
+
+    horn_h = P.CONTROL_HORN_H_MM / 1000.0
+    horn_t = P.CONTROL_HORN_T_MM / 1000.0
+    rod_r = P.PUSHROD_DIA_MM / 2000.0
+
+    parts = []
+    for sgn in (+1.0, -1.0):
+        y = sgn * a["y_mid"]
+        # Control horn on the aileron, standing DOWN from its leading edge so
+        # the pushrod runs clear of the wing underside.
+        with BuildPart() as horn:
+            with Locations((a["x"] - 0.004, y, a["z"] - horn_h / 2.0)):
+                Box(horn_t, 0.010, horn_h)
+        parts.append(horn.part)
+        # Servo horn, standing down out of the bay opening.
+        with BuildPart() as shorn:
+            with Locations((x_servo, y, z_servo - horn_h / 2.0 - 0.006)):
+                Box(horn_t, 0.010, horn_h)
+        parts.append(shorn.part)
+        # Pushrod between the two horn tips.
+        x0, z0 = x_servo, z_servo - horn_h - 0.006
+        x1, z1 = a["x"] - 0.004, a["z"] - horn_h
+        length = math.hypot(x1 - x0, z1 - z0)
+        pitch = math.atan2(z1 - z0, x1 - x0)
+        with BuildPart() as rod:
+            plane = Plane(origin=((x0 + x1) / 2.0, y, (z0 + z1) / 2.0),
+                          x_dir=(math.cos(pitch), 0, math.sin(pitch)),
+                          z_dir=(0, 1, 0))
+            with BuildSketch(plane):
+                with BuildLine():
+                    Polyline(*_ellipse_pts(length / 2.0, rod_r, 20), close=True)
+                make_face()
+            extrude(amount=rod_r, both=True)
+        parts.append(rod.part)
+
+    # --- ruddervator runs ---------------------------------------------------
+    # These were missing entirely: the tail servos sat in the aft fuselage
+    # driving nothing. Long curved runs out to each panel, so they are SLEEVED.
+    # An unsleeved 2 mm rod over the 320 mm run is buckling-limited;
+    # params.check() puts the sleeved margin at 30x.
+    # ⚠ CORRECTED. The first version ran the rod to `rv["y"] * 0.55,
+    # rv["z"] * 0.55` -- 55% of the way to the hinge MIDPOINT, which is a point
+    # hanging in mid-air between the fuselage and the panel, attached to
+    # nothing. It rendered as a long diagonal strut floating outside the tail.
+    #
+    # A horn has to sit ON the surface it drives. Placed near the ruddervator
+    # ROOT and standing off along the panel's own NORMAL, so the rod runs
+    # mostly fore/aft and stays clear of the skin. Run drops from ~200 mm of
+    # diagonal to ~95 mm.
+    sleeve_r = P.RUDDERVATOR_ROD_DIA_MM / 2000.0 + 0.0015
+    d_t = P.solve()
+    for sgn in (+1.0, -1.0):
+        rv = P.ruddervator_geometry(sgn)
+        _, uy, uz = rv["axis"]
+        # Point on the hinge line, well inboard on the moving surface.
+        s_horn = 0.18 * d_t.tail_panel_span
+        base = (rv["x"], s_horn * uy, 0.010 + s_horn * uz)
+        # Panel normal, picking the branch that points BELOW the panel on BOTH
+        # sides. Writing it as (0, uz, -uy) looks symmetric and is not: uy
+        # changes sign with the panel but uz does not, so the right-hand horn
+        # ended up pointing UP while the left pointed down.
+        nrm = (0.0, sgn * uz, -abs(uy))
+        tip = tuple(base[i] + horn_h * nrm[i] for i in range(3))
+        parts.append(_tube(base, tip, horn_t / 2.0, n=10))
+        # Sleeved run from the fuselage servo bay to that horn tip.
+        parts.append(_tube(
+            (P.TAIL_SERVO_X - 0.015, sgn * 0.010, -0.004), tip,
+            sleeve_r, n=14))
+
+    out = parts[0]
+    for p in parts[1:]:
+        out = out + p
+    return out
+
+
+def _tail_servo_bay(sign: float):
+    """Pocket in the aft fuselage for one ruddervator servo.
+
+    NOT in the V-tail: a NACA 0009 panel at 180 mm chord is 16.2 mm thick, which
+    leaves 1.3 mm of skin around a 13.6 mm servo. They sit in the tail boom and
+    drive the ruddervators through pushrods, which is standard practice.
+    """
+    cl = P.SERVO_MOUNT_CLEARANCE_MM / 1000.0
+    ln = P.SURFACE_SERVO_L_MM / 1000.0 + cl
+    wd = P.SURFACE_SERVO_W_MM / 1000.0 + cl
+    ht = P.SURFACE_SERVO_H_MM / 1000.0 + cl
+    # Side by side, one per panel, offset just enough to clear each other.
+    y = sign * (wd / 2.0 + 0.001)
+    with BuildPart() as bay:
+        with Locations((P.TAIL_SERVO_X, y, 0.0)):
+            Box(ln, wd, ht)
+    return bay.part
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +626,12 @@ def build_fuselage():
                     Polyline(*_ellipse_pts(half_w, half_h), close=True)
                 make_face()
         loft()
-    return part.part
+    fuse = part.part
+    # Bays for the two ruddervator servos, in the tail boom rather than in the
+    # V-tail panels -- see _tail_servo_bay for why the panels cannot take them.
+    for sgn in (+1.0, -1.0):
+        fuse = fuse - _tail_servo_bay(sgn)
+    return fuse
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +986,11 @@ PARTS = {
     "booms": build_booms,
     "prop_wing": lambda: build_prop(P.WING_PROP_DIAMETER),
     "prop_tail": lambda: build_prop(P.TAIL_PROP_DIAMETER),
+    # Control horns and pushrods -- the visible half of each servo run.
+    "linkages": build_linkages,
+    # Carbon primary structure and the printed formers threaded onto it.
+    "structure": build_structure,
+    "formers": build_formers,
     # Control surfaces as real lofted aerofoil slices, not grey boxes.
     "aileron_left": lambda: build_aileron(+1.0),
     "aileron_right": lambda: build_aileron(-1.0),

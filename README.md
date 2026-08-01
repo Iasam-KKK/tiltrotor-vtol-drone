@@ -50,11 +50,18 @@ can re-run.
 
 | Claim | Measurement | How |
 |---|---|---|
-| Design closes | **61/61** invariants | `cad/params.py` |
+| Design closes | **87/87** invariants | `cad/params.py` |
 | Model is valid | **13/13** | `sim/validate_model.sh` |
 | CAD is manufacturable | STEP round-trip **0.000000 mm³** | `cad/gen_nacelle.py` |
 | **It hovers** | climbed to **10.071 m** vs 10.0 m commanded | `sim/verify_hover.sh` |
 | **It transitions** | both tilting nacelles **0.5° → 89.5°** | `sim/verify_transition.sh` |
+| Control surfaces fit the wing | cutter **100.0%** inside the wing solid | `cad/probe_ctrl_fit.py` |
+| Every avionics box fits its station | 7 items vs the lofted section | `cad/params.py` |
+| **It glides** | measured L/D vs the derived polar | `sim/verify_glide.sh` |
+
+⚠️ The hover and transition rows above were measured **before** the pitch and
+geometry corrections below. They have not been re-run since. Treat them as
+evidence the mechanism works, not as current numbers.
 
 Nacelle angle through the manoeuvre, read from Gazebo's joint state rather than
 from a log line (0° = thrust up, 90° = thrust forward):
@@ -85,9 +92,12 @@ distribution is a different aircraft.
 | Rotor stations from CG | wing **+0.173 m** (tilting), lift rotor **−0.700 m** (fixed) |
 | Tail | V-tail at **−0.870 m**, 36.4° dihedral, 0.128 m² |
 | Hover trim (solved) | wing 19.19 N each, lift rotor 9.32 N (**19.8%** of lift) |
-| Fuselage | 1.35 m, fineness **10.2**, waisted 57% at the pylon |
+| Fuselage | 1.55 m, fineness **12.7**, waisted 70% at the pylon |
 | Stall → transition → cruise | 10.92 → 14.20 → 19.0 m/s |
-| Cruise L/D | **14.1** |
+| Cruise L/D · best L/D | **14.1** at 19 m/s · **15.65** at 15.01 m/s |
+| Unpowered glide | **3.66°**, sink **0.957 m/s** |
+| Servos · peak servo current | 4 surface + 2 tilt · **15 A** (needs its own BEC) |
+| Payload | 1080p nose camera, 45 g, 78° HFOV, 15° down |
 
 ### Why the rotors straddle the CG
 
@@ -114,11 +124,26 @@ The Gazebo model, the PX4 airframe, the lofted geometry and the printed nacelle
 are all *generated* from it, so they cannot drift apart.
 
 ```
-cad/params.py ──┬─→ gen_sdf.py       → sim/models/tri_tiltrotor/model.sdf
-                ├─→ gen_airframe.py  → sim/airframes/4030_gz_tri_tiltrotor
-                ├─→ gen_geometry.py  → lofted wing / fuselage / tail meshes
-                └─→ gen_nacelle.py   → printable cradle, yoke, fit coupon
+cad/params.py ──┬─→ gen_sdf.py           → sim/models/tri_tiltrotor/model.sdf
+                ├─→ gen_airframe.py      → sim/airframes/4030_gz_tri_tiltrotor
+                ├─→ gen_geometry.py      → lofted wing / fuselage / tail /
+                │                          control surfaces / booms / props
+                ├─→ gen_nacelle.py       → printable cradle, yoke, fit coupon
+                ├─→ gen_manifest.py      → render/assembly.json  (Blender)
+                ├─→ gen_flight_params.py → sim/ros2/flight_params.json  (ROS 2)
+                ├─→ gen_layout.py        → docs/equipment-bay.svg
+                └─→ gen_bom.py           → docs/BOM.csv
 ```
+
+`gen_flight_params.py` exists because the ROS 2 teleop node runs under WSL's
+system Python and cannot import `params.py` (Windows-side 3.12 venv with
+build123d). Without it the glide speed would have to be retyped into the node
+and would drift the moment the polar changed.
+
+## Running it
+
+See [`RUN.md`](RUN.md) — three commands, plus the environment traps that make
+the difference between "it works" and "it silently does nothing".
 
 `params.check()` runs 50 invariants in arithmetic *before* any CAD kernel or
 simulator starts, and refuses to emit an aircraft that cannot fly. It has
@@ -129,6 +154,26 @@ already caught, on real runs:
   flown in its own wash
 - its own bad arithmetic — a bolt-pattern check that double-counted and failed
   a design that was fine
+
+### Six defects this structure caught, and one it didn't
+
+Every one of these passed the invariant suite as it stood. They are listed with
+what was wrong, how it was actually found, and what now prevents a repeat —
+because "we have 87 checks" is worth nothing next to what the checks missed.
+
+| Defect | Found by | Why the checks missed it |
+|---|---|---|
+| **Aerofoil built upside down.** `Plane(x_dir=(1,0,0), z_dir=(0,1,0))` has in-plane Y = `(0,0,-1)`, so NACA 2410's camber pointed at the ground on the wing, winglets, tail and propeller blades. | Extruding one root section in isolation: sketch Y `-21.5..+10.2` → model z `-10.2..+21.5` | Nothing inspected the mesh. `LiftDrag` reads coefficients and joint angles, never geometry, so it flew correctly while looking wrong. A first probe read the wing **bounding box** and concluded the opposite — the winglet at +152 mm dominates it. |
+| **Wing boom slung under the wing.** Centred 14 mm below the chord line, spanning −22.0…−6.0 mm against a skin at −8.3…+18.4 mm: 13.7 mm proud, applying nacelle load on a lever arm instead of in shear. | Measuring the section at the boom station | The boom's `z` was a literal in `gen_geometry.py` that `params.py` never saw. Now asserted **where the number lives**, not in `check()`. |
+| **Control surfaces overlapping the wing.** Built as separate solids while the wing kept its full chord — two solids in one space. | Volume arithmetic: the wing lost 57.5 cm³ to a 478 cm³ cutter | No check compared the surfaces to the wing. Now the surface *is* the wing's own aft portion (`wing ∩ prism`), 100% by construction. |
+| **V-tail bolted to nothing.** The body ended at −0.872 m; the tail root chord runs to −1.005 m. 133 mm of a 180 mm root cantilevered into open air. | Reading the station table against the tail chord | The invariant was called *"fuselage is long enough to carry the tail"* and compared **two lengths** (1.35 vs 0.956 m). It never asked where anything was. |
+| **Takeoff nose-up.** `CA_ROTOR*_CT` defaults to 6.5 for every rotor; ours are 38 N and 25 N. PX4 asked the tail for 9.32 N and got ~66%, leaving ~2.2 N·m of unopposed nose-up at 0.700 m aft. | PX4's own `module.yaml`: *"Thrust = CT · u²"* | Stock `4020_gz_tiltrotor` omits `CT` too — correctly, because its four rotors are identical and the error is common-mode. Ours are not. |
+| **CG 11.2 mm off.** `base_link`'s inertial sat at the origin while five links hung mass elsewhere; every `CA_ROTOR*_PX` is quoted from the CG. | Summing m·x across the emitted SDF | `params.check()` verified the *design* CG arithmetic. Nothing verified that the *generated SDF* put mass where the design said. |
+| **BOM had no control-surface servos.** Listed 3 tilt servos, zero aileron or ruddervator servos, while PX4 has allocated four (`CA_SV_CS0..3`) since the V-tail was adopted. | Reading the BOM against the airframe | Nothing cross-checked the parts list against the control allocation. An aircraft built to that list would have had no roll, pitch or yaw in forward flight. |
+
+The pattern worth taking away: **five of the seven were checks whose *name*
+claimed a guarantee their *arithmetic* could not deliver.** A check with a
+constant on both sides (`3 <= 4`) cannot fail, and cannot help.
 
 ### Aerodynamics are derived, not typed in
 
@@ -208,14 +253,25 @@ Reproducibility is the point; these are the versions it was verified against.
   any conclusion, but it is an estimate.
 - **The transition is verified as "the nacelles rotate through 90° in flight".**
   Sustained trimmed cruise and the back-transition are not yet characterised.
-- **The Gazebo GUI does not render** on the development machine (WSLg): the
-  window is created and stays 1×1, or composites as solid black. All video is
-  therefore captured headless off the camera topics, which works and is what
-  `sim/capture_video.sh` does. See `docs/ENVIRONMENT.md`.
-- **Control surfaces are still primitives.** The wing, fuselage and tail are
-  lofted meshes; the ailerons, elevator and rudder are boxes positioned on the
-  wing station. Cosmetic only — the aerodynamic model reads coefficients, not
-  geometry.
+- **The Gazebo GUI does not render under WSLg** — the window maps at full size
+  and composites solid black, every render engine and Qt backend, measured by
+  pixel dump (`mean=0.00`). It renders correctly in an **xrdp session**
+  (`sim/setup_xfce_xrdp.sh`), where 3D still runs on the GPU via Mesa's `d3d12`
+  driver over `/dev/dxg`. Cause of the black desktop there in turn: WSLg
+  exports `WAYLAND_DISPLAY` into every process, GTK prefers Wayland, and every
+  XFCE component exits. `sim/fix_xrdp_display.sh` pins the session to X11.
+- **Flown only in offboard mode from `sim/ros2/teleop_tiltrotor.py`.** There is
+  no RC input and no QGroundControl on the development machine.
+- **The pitch and geometry corrections are reasoned and generated, not yet
+  re-flown.** `sim/verify_takeoff_pitch.sh` exists to confirm them and has not
+  been run since the fixes landed.
+- **No electrical design exists.** The BOM now carries the right servo count and
+  a BEC sized for a 15 A peak servo rail, but there is no schematic, no power
+  distribution board and no wiring harness. That is a KiCad job and it is the
+  gap between "the aerodynamics and control allocation are verified" and "this
+  could be built".
+- **`MASS_FUSELAGE` is still 0.85 kg** after the body grew from 1.35 to 1.55 m.
+  The mass budget closes only because that number is hand-entered.
 
 ## Licence
 

@@ -93,6 +93,31 @@ def build_cradle():
             Circle(radius=P.MOTOR_SHAFT_CLEAR_MM / 2.0)
         extrude(amount=-P.CRADLE_PLATE_MM, mode=Mode.SUBTRACT)
 
+        # --- DRIVEN HORN ------------------------------------------------------
+        # ⚠ This is what was missing. The cradle rotated on a shaft in bearings
+        # with nothing connected to it: the servo existed in the BOM and in the
+        # torque calculation, and nowhere in the geometry. Without a horn there
+        # is no way to convert servo rotation into nacelle tilt, so the
+        # "mechanism" was a bearing assembly, not an actuator.
+        #
+        # The arm projects AFT of the tilt axis by SERVO_HORN_RADIUS_MM. The
+        # servo horn on the yoke has the same radius, so the linkage is 1:1 and
+        # the servo's travel maps directly onto the nacelle's -15..+90 deg.
+        r = P.SERVO_HORN_RADIUS_MM
+        with Locations(Location((0, 0, axis_z))):
+            # Arm: a flat lug from the shaft boss out to the pushrod hole.
+            with Locations((-r / 2.0, 0, 0)):
+                Box(r, P.HORN_ARM_THICK_MM, P.HORN_BOSS_DIA_MM)
+            # Boss around the pushrod hole, so the ball link has material.
+            with Locations(Location((-r, 0, 0), (90, 0, 0))):
+                Cylinder(radius=P.HORN_BOSS_DIA_MM / 2.0,
+                         height=P.HORN_ARM_THICK_MM)
+
+        # Pushrod hole through the horn.
+        with Locations(Location((-r, 0, axis_z), (90, 0, 0))):
+            Cylinder(radius=P.PUSHROD_HOLE_DIA_MM / 2.0,
+                     height=P.HORN_ARM_THICK_MM + 4.0, mode=Mode.SUBTRACT)
+
     return cradle.part
 
 
@@ -156,7 +181,88 @@ def build_yoke():
                     mode=Mode.SUBTRACT,
                 )
 
+        # --- SERVO MOUNT ------------------------------------------------------
+        # The other half of the missing actuator. The servo sits on the yoke
+        # (which is fixed to the boom and does not tilt) and drives the cradle
+        # through a pushrod. Mounting it on the yoke rather than the cradle is
+        # deliberate: a servo on the cradle would have to carry its own wiring
+        # through the rotating joint, which is the usual way tilt mechanisms
+        # fail.
+        #
+        # Case lies FLAT -- its {P.TILT_SERVO_H_MM:.0f} mm height is across the yoke, not up it,
+        # because standing it upright would exceed the nacelle width.
+        sl = P.TILT_SERVO_L_MM + P.SERVO_MOUNT_CLEARANCE_MM
+        sw = P.TILT_SERVO_W_MM + P.SERVO_MOUNT_CLEARANCE_MM
+        sh = P.TILT_SERVO_H_MM + P.SERVO_MOUNT_CLEARANCE_MM
+        # Ledge behind the boom clamp for the servo to bolt onto, then the
+        # pocket cut out of it.
+        pocket_z = YOKE_ARM_H * 0.42
+        with Locations((sl / 2.0 + clamp_od / 2.0, 0, pocket_z)):
+            Box(sl + 2 * P.WALL_MM, sh + 2 * P.WALL_MM, sw + 2 * P.WALL_MM)
+        with Locations((sl / 2.0 + clamp_od / 2.0, 0, pocket_z)):
+            Box(sl, sh, sw, mode=Mode.SUBTRACT)
+        # Servo flange screws, M2, one pair each end of the case.
+        for sx in (clamp_od / 2.0 + 3.0, clamp_od / 2.0 + sl - 3.0):
+            with Locations(Location((sx, 0, pocket_z), (0, 0, 0))):
+                with GridLocations(x_spacing=0, y_spacing=sh - 4.0,
+                                   x_count=1, y_count=2):
+                    Cylinder(radius=1.1, height=sw + 2 * P.WALL_MM + 4.0,
+                             rotation=(90, 0, 0), mode=Mode.SUBTRACT)
+
     return yoke.part
+
+
+def build_tail_mount():
+    """Fixed motor mount for the tail rotor. No tilt mechanism.
+
+    ⚠ The tail station used to be drawn with the full tilting assembly -- yoke,
+    cradle, two bearings, a shaft and now a servo -- inherited from the layout
+    where the tail rotor tilted. It does not tilt: TAIL_TILTS is False, the SDF
+    emits a `fixed` joint, and PX4 has CA_ROTOR2_TILT = 0. All that hardware
+    bought a degree of freedom nothing uses, at 42 mm of height and 31 cm^3 of
+    print.
+
+    What a fixed rotor actually needs: a plate with the motor bolt pattern, and
+    a saddle that grips the top of the pylon. 11 mm tall.
+    """
+    with BuildPart() as mount:
+        # --- motor mount plate ---
+        Cylinder(
+            radius=P.CRADLE_PLATE_DIA_MM / 2.0,
+            height=P.CRADLE_PLATE_MM,
+            align=(Align.CENTER, Align.CENTER, Align.MAX),
+        )
+
+        # --- saddle that slips over the pylon's top section ---
+        saddle_h = P.TAIL_MOUNT_HEIGHT_MM - P.CRADLE_PLATE_MM
+        with Locations((0, 0, -P.CRADLE_PLATE_MM - saddle_h / 2.0)):
+            Box(P.TAIL_PYLON_TOP_CHORD_MM * 0.55,
+                P.TAIL_PYLON_TOP_THICK_MM + 2 * P.WALL_MM,
+                saddle_h)
+        # Socket for the pylon itself, open at the bottom.
+        with Locations((0, 0, -P.CRADLE_PLATE_MM - saddle_h / 2.0
+                        + (saddle_h - P.TAIL_MOUNT_SADDLE_MM) / 2.0)):
+            Box(P.TAIL_PYLON_TOP_CHORD_MM * 0.55 - 2 * P.WALL_MM,
+                P.TAIL_PYLON_TOP_THICK_MM,
+                P.TAIL_MOUNT_SADDLE_MM + 1.0,
+                mode=Mode.SUBTRACT)
+
+        # --- motor bolt pattern ---
+        with BuildSketch(Plane.XY.offset(0.0)):
+            with GridLocations(
+                x_spacing=P.MOTOR_BOLT_PITCH_MM,
+                y_spacing=P.MOTOR_BOLT_PITCH_MM,
+                x_count=2, y_count=2,
+            ):
+                Circle(radius=P.MOTOR_BOLT_DIA_MM / 2.0)
+        extrude(amount=-P.CRADLE_PLATE_MM, mode=Mode.SUBTRACT)
+
+        # --- central bore for shaft and wiring ---
+        with BuildSketch(Plane.XY):
+            Circle(radius=P.MOTOR_SHAFT_CLEAR_MM / 2.0)
+        extrude(amount=-P.CRADLE_PLATE_MM, mode=Mode.SUBTRACT)
+
+    return mount.part
 
 
 def build_coupon():
@@ -184,6 +290,7 @@ def build_coupon():
 PARTS = {
     "nacelle_cradle": build_cradle,
     "nacelle_yoke": build_yoke,
+    "tail_motor_mount": build_tail_mount,
     "fit_coupon": build_coupon,
 }
 

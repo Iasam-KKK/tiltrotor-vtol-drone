@@ -17,6 +17,7 @@ Run:
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 
 import params as P
@@ -53,10 +54,13 @@ def rows() -> list[dict]:
              supplier="generic", unit_usd=14.00, note=""),
 
         # --- tilt mechanism ---
+        # qty was 3, left over from the tilting-tail layout. The tail rotor is
+        # fixed (TAIL_TILTS = False), so only the two wing nacelles tilt.
         dict(part="Tilt servo",
              spec=f"digital metal-gear, >= {P.SERVO_STALL_TORQUE_KGCM:.0f} kg.cm",
-             qty=3, supplier="Savox / MKS / generic", unit_usd=22.00,
-             note="7.9x margin over computed tilt load"),
+             qty=P.N_SERVO_TILT, supplier="Savox / MKS / generic",
+             unit_usd=22.00,
+             note="8.0x margin over computed tilt load; wing nacelles only"),
         dict(part="Bearing, tilt axis",
              spec=f"686ZZ, {P.TILT_SHAFT_DIA_MM:.0f} x {P.BEARING_OD_MM:.0f} x "
                   f"{P.BEARING_WIDTH_MM:.0f} mm",
@@ -64,7 +68,30 @@ def rows() -> list[dict]:
              note="two per nacelle; clearance fit, not press"),
         dict(part="Tilt shaft",
              spec=f"{P.TILT_SHAFT_DIA_MM:.0f} mm stainless, 60 mm long",
-             qty=3, supplier="generic", unit_usd=1.50, note=""),
+             qty=P.N_SERVO_TILT, supplier="generic", unit_usd=1.50, note=""),
+
+        # --- control surfaces ---
+        # ⚠ THESE WERE MISSING ENTIRELY. The BOM listed tilt servos and no
+        # control-surface servos at all, while the PX4 airframe has allocated
+        # four of them (CA_SV_CS0..3) since the V-tail was adopted. An aircraft
+        # built to the old list would have had no roll, pitch or yaw control in
+        # forward flight.
+        dict(part="Control surface servo",
+             spec=f"digital metal-gear, >= {P.SURFACE_SERVO_TORQUE_KGCM:.0f} kg.cm, "
+                  f"9 g class",
+             qty=P.N_SERVO_SURFACE, supplier="Savox / MKS / generic",
+             unit_usd=13.00,
+             note="2 aileron + 2 ruddervator; mounts in the wing/tail bays"),
+        dict(part="Servo pushrod + clevis", spec="M2 threaded rod, ball link",
+             qty=P.N_SERVO_SURFACE + P.N_SERVO_TILT, supplier="generic",
+             unit_usd=1.80, note="one per servo"),
+        dict(part="BEC, servo rail",
+             spec=f"6S in, 5-6 V out, >= {int(P.N_SERVO_SURFACE * P.SERVO_STALL_CURRENT_A):d} A continuous",
+             qty=1, supplier="Mateksys / generic", unit_usd=18.00,
+             note=f"{P.N_SERVO_SURFACE + P.N_SERVO_TILT} servos x "
+                  f"{P.SERVO_STALL_CURRENT_A:.1f} A stall = "
+                  f"{(P.N_SERVO_SURFACE + P.N_SERVO_TILT) * P.SERVO_STALL_CURRENT_A:.0f} A peak; "
+                  f"the FC regulator gives {P.FC_INTERNAL_BEC_MAX_A:.1f} A"),
 
         # --- structure ---
         dict(part="Carbon boom",
@@ -84,7 +111,15 @@ def rows() -> list[dict]:
         # --- avionics ---
         dict(part="Flight controller", spec="Pixhawk 6C or 6X, PX4 v1.17.0",
              qty=1, supplier="Holybro", unit_usd=200.00,
-             note="7 servo + 3 motor outputs required"),
+             note=f"{P.N_SERVO_SURFACE + P.N_SERVO_TILT} servo + 3 motor "
+                  f"outputs required"),
+        dict(part="Camera, nose",
+             spec=f"{P.CAMERA_WIDTH}x{P.CAMERA_HEIGHT} @ {P.CAMERA_FPS} fps, "
+                  f"{math.degrees(P.CAMERA_HFOV):.0f} deg HFOV",
+             qty=1, supplier="Arducam / generic", unit_usd=45.00,
+             note=f"{P.CAMERA_MASS * 1000:.0f} g, pitched "
+                  f"{math.degrees(P.CAMERA_TILT_DOWN):.0f} deg down; forward of "
+                  f"every rotor disc"),
         dict(part="GPS / compass", spec="M9N or better", qty=1,
              supplier="Holybro", unit_usd=60.00, note=""),
         dict(part="Airspeed sensor", spec="differential pitot, I2C", qty=1,

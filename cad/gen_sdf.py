@@ -576,6 +576,64 @@ def cameras() -> str:
     <joint name="nacelle_cam_joint" type="fixed">
       <parent>base_link</parent>
       <child>nacelle_cam_link</child>
+    </joint>
+{nose_camera()}"""
+
+
+def nose_camera() -> str:
+    """The 1080p payload camera in the nose.
+
+    Unlike chase_cam and nacelle_cam -- which exist to make renders and videos
+    and are not part of the aircraft -- this one IS payload. It carries mass in
+    the budget, occupies a station in the equipment bay, and its position is
+    checked against the rotor discs so no blade crosses the frame.
+
+    Mounted {math.degrees(P.CAMERA_TILT_DOWN):.0f} deg nose-down, which is what a survey camera wants: in
+    cruise the fuselage sits at a small positive alpha, so a level camera looks
+    slightly up at the sky.
+
+    gz_frame_id matters. Without it the image has no usable TF frame and
+    anything downstream (a detector, a mapper) has nothing to transform
+    against -- it publishes happily and is useless.
+    """
+    if not P.CAMERA_ENABLED:
+        return ""
+    return f"""
+    <link name="nose_cam_link">
+      <pose relative_to="base_link">{_f(P.camera_x())} 0 0 0 {_f(P.CAMERA_TILT_DOWN)} 0</pose>
+      <inertial>
+        <mass>{_f(P.CAMERA_MASS)}</mass>
+        <inertia><ixx>1e-06</ixx><iyy>1e-06</iyy><izz>1e-06</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+      </inertial>
+      <visual name="nose_cam_visual">
+        <geometry><box><size>0.030 0.030 0.030</size></box></geometry>
+        <material>
+          <ambient>0.1 0.1 0.12 1</ambient>
+          <diffuse>0.15 0.15 0.18 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="nose_cam" type="camera">
+        <always_on>1</always_on>
+        <update_rate>{P.CAMERA_FPS}</update_rate>
+        <visualize>true</visualize>
+        <topic>nose_cam/image_raw</topic>
+        <gz_frame_id>nose_cam_link</gz_frame_id>
+        <camera>
+          <horizontal_fov>{_f(P.CAMERA_HFOV)}</horizontal_fov>
+          <image>
+            <width>{P.CAMERA_WIDTH}</width>
+            <height>{P.CAMERA_HEIGHT}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip><near>0.05</near><far>3000</far></clip>
+          <noise><type>gaussian</type><mean>0</mean><stddev>0.005</stddev></noise>
+        </camera>
+      </sensor>
+    </link>
+    <joint name="nose_cam_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>nose_cam_link</child>
     </joint>"""
 
 
