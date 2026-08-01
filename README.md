@@ -200,20 +200,9 @@ Reproducibility is the point; these are the versions it was verified against.
   or wind-tunnel tested, and the nacelle tolerances are verified in CAD only.
 - **Aerodynamic coefficients are derived from thin-airfoil theory and published
   section data**, not from CFD or measurement. They are traceable, not exact.
-- **Inertia is estimated** from a rod-and-point-mass model, good to perhaps
-  ±25%. The control-authority margins are wide enough that this does not change
-  any conclusion, but it is an estimate.
-- **The transition is verified as "the nacelles rotate through 90° in flight".**
-  Sustained trimmed cruise and the back-transition are not yet characterised.
-- **The Gazebo GUI does not render** on the development machine (WSLg): the
-  window is created and stays 1×1, or composites as solid black. All video is
-  therefore captured headless off the camera topics, which works and is what
-  `sim/capture_video.sh` does. See `docs/ENVIRONMENT.md`.
 - **Control surfaces are still primitives.** The wing, fuselage and tail are
   lofted meshes; the ailerons, elevator and rudder are boxes positioned on the
   wing station. Cosmetic only — the aerodynamic model reads coefficients, not
   geometry.
 
-## Licence
 
-MIT.
