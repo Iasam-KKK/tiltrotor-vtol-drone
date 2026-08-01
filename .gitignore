@@ -1,0 +1,36 @@
+# Python. This repo is standalone, so it cannot rely on the parent repo's
+# .gitignore for these.
+__pycache__/
+*.py[cod]
+.venv/
+
+# Third-party dependencies must never be committed into this repo.
+# PX4-Autopilot lives in the WSL filesystem at ~/PX4-Autopilot -- it is 394 MB,
+# it is not ours, and building it from /mnt/ is slow. Pinned version is
+# recorded in docs/, not vendored here.
+PX4-Autopilot*/
+*.zip
+*.tar.gz
+
+# Gazebo / PX4 run artefacts
+log/
+logs/
+*.ulg
+build/
+
+# Generated media. Every one of these is reproducible from
+# sim/capture_video.sh, and committing 16 MB of MP4 on every re-shoot would
+# bloat the repo for no benefit. The hero GIF is kept because the README
+# needs it and it is small.
+media/*.mp4
+media/frames/
+!media/hero.gif
+
+# Blender rolling backups.
+*.blend1
+*.blend2
+
+# Generated CAD output. Reproducible from cad/gen_*.py in seconds.
+# STEP files for the portfolio are published deliberately, not by accident.
+cad/out/*.stl
+sim/models/*/meshes/*.stl

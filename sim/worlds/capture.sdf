@@ -1,0 +1,137 @@
+<?xml version="1.0" ?>
+<!--
+  Headless video-capture world.
+
+  Identical physics and sensor systems to test.sdf, plus two fixed cameras that
+  write PNG frames straight to disk via <save enabled="true">. This is the same
+  GPU render path the GUI uses, minus the window and minus the WSLg compositor
+  that cannot draw it. It works headless, which is why the deliverable video
+  comes from here rather than from screen-recording a GUI.
+
+  Two framings because the plan needs both masters:
+    cam_16x9      1920x1080  -> YouTube / LinkedIn
+    cam_vertical  1080x1920  -> Shorts / Reels
+
+  Camera placement: offset to the left of the runway and slightly back, so a
+  vertical takeoff and a forward transition both stay in frame. The aircraft
+  spawns at the origin and departs along +x.
+
+  No design dimensions live in this file. Geometry belongs in cad/params.py.
+-->
+<sdf version="1.9">
+  <world name="capture">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-contact-system"
+            name="gz::sim::systems::Contact"/>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-air-pressure-system"
+            name="gz::sim::systems::AirPressure"/>
+    <plugin filename="gz-sim-air-speed-system"
+            name="gz::sim::systems::AirSpeed"/>
+    <plugin filename="gz-sim-magnetometer-system"
+            name="gz::sim::systems::Magnetometer"/>
+    <plugin filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat"/>
+    <!-- ogre, not ogre2: ogre2 cannot create a GL context under WSLg. -->
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre</render_engine>
+      <background_color>0.55 0.72 0.90</background_color>
+    </plugin>
+
+    <gravity>0 0 -9.80665</gravity>
+    <magnetic_field>6.0e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>24.8607</latitude_deg>
+      <longitude_deg>67.0011</longitude_deg>
+      <elevation>8</elevation>
+    </spherical_coordinates>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.55 0.72 0.90 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 20 0 0 0</pose>
+      <diffuse>0.9 0.9 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.4 0.3 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <material>
+            <ambient>0.35 0.42 0.32 1</ambient>
+            <diffuse>0.40 0.50 0.36 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 16:9 master. Left of the flight line, looking back and up. -->
+    <model name="cam_16x9">
+      <static>true</static>
+      <pose>-6 -14 4.5 0 0.12 1.20</pose>
+      <link name="link">
+        <sensor name="cam_16x9" type="camera">
+          <always_on>1</always_on>
+          <update_rate>30</update_rate>
+          <camera>
+            <horizontal_fov>1.15</horizontal_fov>
+            <image><width>1920</width><height>1080</height><format>R8G8B8</format></image>
+            <clip><near>0.1</near><far>800</far></clip>
+            <!-- No <save> element: on this machine it writes nothing and the
+                 run dumps core. Frames are taken off the image TOPIC instead,
+                 bridged into ROS 2 and encoded by record_video.py. -->
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- Vertical master for Shorts/Reels. Closer and tighter. -->
+    <model name="cam_vertical">
+      <static>true</static>
+      <pose>-3 -9 3.0 0 0.22 1.25</pose>
+      <link name="link">
+        <sensor name="cam_vertical" type="camera">
+          <always_on>1</always_on>
+          <update_rate>30</update_rate>
+          <camera>
+            <horizontal_fov>0.85</horizontal_fov>
+            <image><width>1080</width><height>1920</height><format>R8G8B8</format></image>
+            <clip><near>0.1</near><far>800</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+  </world>
+</sdf>

@@ -1,0 +1,194 @@
+#!/bin/sh
+#
+# @name Tri-Tiltrotor VTOL
+#
+# @type VTOL Tiltrotor
+#
+# GENERATED FILE. DO NOT EDIT BY HAND.
+# Source of truth: cad/params.py   Generator: cad/gen_airframe.py
+#
+# Three tilting nacelles: two on the wing ahead of the CG, one at the tail
+# behind it. The rotors straddle the CG, which is what makes hover pitch
+# trimmable -- a layout with both rotors aft of the CG cannot be trimmed.
+#
+# Hover trim solved in params.py, not tuned by hand:
+#   wing rotors 18.88 N each, tail rotor 9.32 N
+#   tail carries 19.8% of hover lift
+#
+
+. ${R}etc/init.d/rc.vtol_defaults
+
+PX4_SIMULATOR=${PX4_SIMULATOR:=gz}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=default}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=tri_tiltrotor}
+
+param set-default SIM_GZ_EN 1
+
+param set-default MAV_TYPE 21
+param set-default CA_AIRFRAME 3
+
+# ---------------------------------------------------------------------------
+# Rotors.  PX4 body frame is FRD: +x forward, +y RIGHT, +z down.
+# The Gazebo model frame is FLU (+y LEFT), so lateral signs are inverted here
+# relative to the SDF. Getting this wrong mirrors the aircraft and inverts roll.
+# ---------------------------------------------------------------------------
+param set-default CA_ROTOR_COUNT 3
+
+# CA_ROTOR{i}_CT -- "Thrust = CT * u^2", u being the output signal, per
+# src/modules/control_allocator/module.yaml in the pinned v1.17.0 tree.
+#
+# ⚠ THIS BLOCK USED TO OMIT CT, AND THAT CAUSED THE NOSE-UP ON TAKEOFF.
+# The default is 6.5 for every rotor. Stock 4020_gz_tiltrotor also omits it and
+# is fine, because all four of ITS rotors are identical: a wrong-but-equal CT
+# is common mode, it just rescales total thrust and the altitude loop absorbs
+# it. Our three rotors are NOT identical -- 38 N on the wing against
+# 25 N at the tail -- so one shared CT biases the wing/tail SPLIT.
+#
+# PX4 asked the tail for 9.32 N and the tail delivered about
+# 66% of it. The missing up-force acts 0.700 m BEHIND the CG,
+# which is an unopposed nose-up moment of roughly
+# 2.23 N.m -- tail drops, nose rises.
+#
+# Only the RATIO matters (the allocator normalises the absolute scale), so the
+# wing keeps PX4's 6.5 and the tail is scaled by the true thrust ratio.
+param set-default CA_ROTOR0_CT 6.5000
+param set-default CA_ROTOR1_CT 6.5000
+param set-default CA_ROTOR2_CT 4.2763
+
+# Rotor 0 -- left wing nacelle (ccw)
+param set-default CA_ROTOR0_PX 0.1728
+param set-default CA_ROTOR0_PY -0.4000
+param set-default CA_ROTOR0_KM 0.05
+
+# Rotor 1 -- right wing nacelle (cw)
+param set-default CA_ROTOR1_PX 0.1728
+param set-default CA_ROTOR1_PY 0.4000
+param set-default CA_ROTOR1_KM -0.05
+
+# Rotor 2 -- tail nacelle (ccw)
+param set-default CA_ROTOR2_PX -0.7000
+param set-default CA_ROTOR2_PY 0.0000
+param set-default CA_ROTOR2_KM 0.05
+
+# Rotor -> tilt servo assignment. CA_ROTOR{i}_TILT is 1-INDEXED
+# (0 means "not tilting"), while CA_SV_TL{i}_* are 0-indexed.
+param set-default CA_ROTOR0_TILT 1
+param set-default CA_ROTOR1_TILT 2
+param set-default CA_ROTOR2_TILT 0
+
+# ---------------------------------------------------------------------------
+# Tilt servos.  PX4: "An angle of zero means upwards."  TD 0 = Towards Front.
+# CT: 0 None, 1 Yaw, 2 Pitch, 3 Yaw and Pitch.
+#
+# The wing pair carries yaw (differential tilt about the CG gives a couple
+# about z) and travels 15 deg aft of vertical to do it.
+# The tail nacelle carries pitch. It cannot contribute yaw at all: a
+# centreline force in the x-z plane produces no moment about z.
+# ---------------------------------------------------------------------------
+param set-default CA_SV_TL_COUNT 2
+
+param set-default CA_SV_TL0_MINA -15
+param set-default CA_SV_TL0_MAXA 90
+param set-default CA_SV_TL0_TD 0
+param set-default CA_SV_TL0_CT 1
+
+param set-default CA_SV_TL1_MINA -15
+param set-default CA_SV_TL1_MAXA 90
+param set-default CA_SV_TL1_TD 0
+param set-default CA_SV_TL1_CT 1
+# Rotor 2 is FIXED and hover-only: CA_ROTOR2_TILT = 0 above, and there is no
+# third tilt servo. It carries pitch by thrust modulation alone, and stops in
+# cruise -- a folding prop streamlines it against the pylon.
+# Hover trim: 9.32 N, 19.8% of lift.
+
+# ---------------------------------------------------------------------------
+# Control surfaces.  Types: 1 Left Aileron, 2 Right Aileron, 7 Left V-Tail,
+# 8 Right V-Tail.
+#
+# The wing surfaces are AILERONS, not elevons: the V-tail carries pitch, so
+# putting pitch on the wing as well would double-book it.
+#
+# The V-tail panels sit at 36.5 deg dihedral, derived in
+# params.py from the pitch and yaw effectiveness required. Each ruddervator
+# therefore contributes cos(36.5) to pitch and
+# sin(36.5) to yaw -- deflected together they are an
+# elevator, differentially they are a rudder.
+# ---------------------------------------------------------------------------
+param set-default CA_SV_CS_COUNT 4
+
+param set-default CA_SV_CS0_TYPE 1
+param set-default CA_SV_CS0_TRQ_R -0.5
+
+param set-default CA_SV_CS1_TYPE 2
+param set-default CA_SV_CS1_TRQ_R 0.5
+
+param set-default CA_SV_CS2_TYPE 7
+param set-default CA_SV_CS2_TRQ_P 0.8043
+param set-default CA_SV_CS2_TRQ_Y 0.5943
+
+param set-default CA_SV_CS3_TYPE 8
+param set-default CA_SV_CS3_TRQ_P 0.8043
+param set-default CA_SV_CS3_TRQ_Y -0.5943
+
+# ---------------------------------------------------------------------------
+# Gazebo bridge -- motors.  SIM_GZ_EC_FUNC{n} = 100 + motor number.
+# Output n (1-indexed) drives SDF motorNumber n-1.
+# ---------------------------------------------------------------------------
+param set-default SIM_GZ_EC_FUNC1 101
+param set-default SIM_GZ_EC_FUNC2 102
+param set-default SIM_GZ_EC_FUNC3 103
+
+param set-default SIM_GZ_EC_MIN1 10
+param set-default SIM_GZ_EC_MIN2 10
+param set-default SIM_GZ_EC_MIN3 10
+
+param set-default SIM_GZ_EC_MAX1 1378
+param set-default SIM_GZ_EC_MAX2 1378
+param set-default SIM_GZ_EC_MAX3 1443
+
+# ---------------------------------------------------------------------------
+# Gazebo bridge -- servos.  ORDER IS LOAD-BEARING: PX4 allocates control
+# surfaces first, then tilt servos. Stock 4020_gz_tiltrotor demonstrates this
+# (3 surfaces on servos 1-3, then tilt angle params on servos 4-5).
+#
+#   servo 1..4 -> CA_SV_CS0..3   (aileron L, aileron R, V-tail L, V-tail R)
+#   servo 5..7 -> CA_SV_TL0..2   (tilt L, tilt R, tilt tail)
+#
+# gz sub_topic servo_N corresponds to SIM_GZ_SV_*{N+1}.
+# ---------------------------------------------------------------------------
+param set-default SIM_GZ_SV_FUNC1 201
+param set-default SIM_GZ_SV_FUNC2 202
+param set-default SIM_GZ_SV_FUNC3 203
+param set-default SIM_GZ_SV_FUNC4 204
+param set-default SIM_GZ_SV_FUNC5 205
+param set-default SIM_GZ_SV_FUNC6 206
+
+param set-default SIM_GZ_SV_MINA5 -15
+param set-default SIM_GZ_SV_MAXA5 90
+param set-default SIM_GZ_SV_MINA6 -15
+param set-default SIM_GZ_SV_MAXA6 90
+
+
+
+# ---------------------------------------------------------------------------
+# VTOL and fixed-wing envelope.  These come straight out of params.py's
+# aerodynamic solve rather than being guessed:
+#   stall 10.92 m/s -> transition 14.20 m/s -> cruise 19.0 m/s
+# ---------------------------------------------------------------------------
+param set-default VT_TYPE 1
+param set-default VT_TILT_MC 0.1429
+param set-default VT_TILT_TRANS 0.6
+param set-default VT_TILT_FW 1.0000
+param set-default VT_ARSP_TRANS 14.2
+param set-default VT_ARSP_BLEND 12.0
+param set-default VT_B_TRANS_DUR 5.0
+param set-default VT_FWD_THRUST_EN 4
+param set-default VT_FWD_THRUST_SC 0.6
+
+param set-default FW_AIRSPD_STALL 10.9
+param set-default FW_AIRSPD_MIN 13.7
+param set-default FW_AIRSPD_TRIM 19.0
+param set-default FW_AIRSPD_MAX 28.5
+
+param set-default MC_AIRMODE 1
+param set-default MIS_TAKEOFF_ALT 10

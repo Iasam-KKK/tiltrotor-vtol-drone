@@ -1,0 +1,872 @@
+{
+  "hover": {
+    "generated_from": "cad/params.py",
+    "units": "metres",
+    "tilt_deg": 0.0,
+    "aircraft": {
+      "mtow_kg": 4.8,
+      "span_m": 2.0,
+      "wing_area_m2": 0.52,
+      "airfoil": "NACA 2410",
+      "stall_ms": 10.92,
+      "cruise_ms": 19.0
+    },
+    "parts": [
+      {
+        "name": "fuselage",
+        "mesh": "sim/models/tri_tiltrotor/meshes/fuselage.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "body"
+      },
+      {
+        "name": "wing",
+        "mesh": "sim/models/tri_tiltrotor/meshes/wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.007800000000000001,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "tail",
+        "mesh": "sim/models/tri_tiltrotor/meshes/tail.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "booms",
+        "mesh": "sim/models/tri_tiltrotor/meshes/booms.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "aileron_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.14621287258915602,
+          0.64,
+          0.04793227906483581
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "aileron_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/aileron_right.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.14621287258915602,
+          -0.64,
+          0.04793227906483581
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "ruddervator_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/ruddervator_left.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.951,
+          0.1489256588095277,
+          0.12003564237369904
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "ruddervator_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/ruddervator_right.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.951,
+          -0.1489256588095277,
+          0.12003564237369904
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "nacelle_yoke_left",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          0.4,
+          0.009970724777404169
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_left",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.1728,
+          0.4,
+          0.07497072477740417
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "prop",
+        "mirror": false
+      },
+      {
+        "name": "nacelle_yoke_right",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.009970724777404169
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_right",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.07497072477740417
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "prop",
+        "mirror": true
+      },
+      {
+        "name": "nacelle_yoke_tail",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          -0.7,
+          0.0,
+          0.022141935483870973
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_tail",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          -0.7,
+          0.0,
+          0.05214193548387097
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_tail",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_tail.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.7,
+          0.0,
+          0.08714193548387097
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "prop",
+        "mirror": false
+      }
+    ]
+  },
+  "transition": {
+    "generated_from": "cad/params.py",
+    "units": "metres",
+    "tilt_deg": 45.0,
+    "aircraft": {
+      "mtow_kg": 4.8,
+      "span_m": 2.0,
+      "wing_area_m2": 0.52,
+      "airfoil": "NACA 2410",
+      "stall_ms": 10.92,
+      "cruise_ms": 19.0
+    },
+    "parts": [
+      {
+        "name": "fuselage",
+        "mesh": "sim/models/tri_tiltrotor/meshes/fuselage.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "body"
+      },
+      {
+        "name": "wing",
+        "mesh": "sim/models/tri_tiltrotor/meshes/wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.007800000000000001,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "tail",
+        "mesh": "sim/models/tri_tiltrotor/meshes/tail.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "booms",
+        "mesh": "sim/models/tri_tiltrotor/meshes/booms.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "aileron_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.14621287258915602,
+          0.64,
+          0.04793227906483581
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "aileron_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/aileron_right.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.14621287258915602,
+          -0.64,
+          0.04793227906483581
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "ruddervator_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/ruddervator_left.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.951,
+          0.1489256588095277,
+          0.12003564237369904
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "ruddervator_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/ruddervator_right.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.951,
+          -0.1489256588095277,
+          0.12003564237369904
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "nacelle_yoke_left",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          0.4,
+          0.009970724777404169
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_left",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          0.7853981633974483,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.19754873734152917,
+          0.4,
+          0.06471946211893334
+        ],
+        "rot": [
+          0,
+          0.7853981633974483,
+          0
+        ],
+        "material": "prop",
+        "mirror": false
+      },
+      {
+        "name": "nacelle_yoke_right",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.009970724777404169
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_right",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          0.7853981633974483,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.19754873734152917,
+          -0.4,
+          0.06471946211893334
+        ],
+        "rot": [
+          0,
+          0.7853981633974483,
+          0
+        ],
+        "material": "prop",
+        "mirror": true
+      },
+      {
+        "name": "nacelle_yoke_tail",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          -0.7,
+          0.0,
+          0.022141935483870973
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_tail",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          -0.7,
+          0.0,
+          0.05214193548387097
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_tail",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_tail.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.7,
+          0.0,
+          0.08714193548387097
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "prop",
+        "mirror": false
+      }
+    ]
+  },
+  "cruise": {
+    "generated_from": "cad/params.py",
+    "units": "metres",
+    "tilt_deg": 90.0,
+    "aircraft": {
+      "mtow_kg": 4.8,
+      "span_m": 2.0,
+      "wing_area_m2": 0.52,
+      "airfoil": "NACA 2410",
+      "stall_ms": 10.92,
+      "cruise_ms": 19.0
+    },
+    "parts": [
+      {
+        "name": "fuselage",
+        "mesh": "sim/models/tri_tiltrotor/meshes/fuselage.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "body"
+      },
+      {
+        "name": "wing",
+        "mesh": "sim/models/tri_tiltrotor/meshes/wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.007800000000000001,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "tail",
+        "mesh": "sim/models/tri_tiltrotor/meshes/tail.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "booms",
+        "mesh": "sim/models/tri_tiltrotor/meshes/booms.stl",
+        "scale": 1.0,
+        "loc": [
+          0,
+          0,
+          0
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "carbon"
+      },
+      {
+        "name": "aileron_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.14621287258915602,
+          0.64,
+          0.04793227906483581
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "aileron_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/aileron_right.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.14621287258915602,
+          -0.64,
+          0.04793227906483581
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "ruddervator_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/ruddervator_left.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.951,
+          0.1489256588095277,
+          0.12003564237369904
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "ruddervator_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/ruddervator_right.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.951,
+          -0.1489256588095277,
+          0.12003564237369904
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "skin"
+      },
+      {
+        "name": "nacelle_yoke_left",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          0.4,
+          0.009970724777404169
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_left",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          1.5707963267948966,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_left",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.2078,
+          0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          1.5707963267948966,
+          0
+        ],
+        "material": "prop",
+        "mirror": false
+      },
+      {
+        "name": "nacelle_yoke_right",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.009970724777404169
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_right",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          0.1728,
+          -0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          1.5707963267948966,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_right",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_wing.stl",
+        "scale": 1.0,
+        "loc": [
+          0.2078,
+          -0.4,
+          0.03997072477740417
+        ],
+        "rot": [
+          0,
+          1.5707963267948966,
+          0
+        ],
+        "material": "prop",
+        "mirror": true
+      },
+      {
+        "name": "nacelle_yoke_tail",
+        "mesh": "cad/out/nacelle_yoke.stl",
+        "scale": 0.001,
+        "loc": [
+          -0.7,
+          0.0,
+          0.022141935483870973
+        ],
+        "rot": [
+          0,
+          0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "nacelle_cradle_tail",
+        "mesh": "cad/out/nacelle_cradle.stl",
+        "scale": 0.001,
+        "loc": [
+          -0.7,
+          0.0,
+          0.05214193548387097
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "printed"
+      },
+      {
+        "name": "prop_tail",
+        "mesh": "sim/models/tri_tiltrotor/meshes/prop_tail.stl",
+        "scale": 1.0,
+        "loc": [
+          -0.7,
+          0.0,
+          0.08714193548387097
+        ],
+        "rot": [
+          0,
+          0.0,
+          0
+        ],
+        "material": "prop",
+        "mirror": false
+      }
+    ]
+  }
+}

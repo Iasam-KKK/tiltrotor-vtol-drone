@@ -1,0 +1,1386 @@
+r"""
+Single source of truth for the tri-tiltrotor VTOL.
+
+Every dimension, mass and aerodynamic coefficient in this project lives HERE and
+nowhere else. The Gazebo SDF, the PX4 airframe file, the URDF and the printed
+nacelle CAD are all *generated* from this module, so the simulated aircraft and
+the printed part cannot drift apart.
+
+This is the same structure that worked on 01-nav2-deck. `check()` runs the design
+invariants in plain arithmetic BEFORE any CAD kernel or simulator starts, and
+refuses to emit an aircraft that cannot hover, cannot trim, or whose props
+intersect. A geometry error should fail here in 30 ms, not after a 90 s build.
+
+Axes (PX4/ROS FRD body frame, right-handed):
+    +x forward (nose)     +y right (starboard)     +z down
+
+Longitudinal stations are quoted as distances FROM THE CG, positive forward.
+
+Run directly to print the design report:
+    .\.venv-cad\Scripts\python.exe projects\04-tiltrotor-vtol\cad\params.py
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+
+# ---------------------------------------------------------------------------
+# Physical constants
+# ---------------------------------------------------------------------------
+
+G = 9.80665          # m/s^2
+RHO = 1.2041         # kg/m^3, ISA sea level 20 C -- matches PX4's stock SDF
+
+
+# ---------------------------------------------------------------------------
+# Design inputs.  These are the only numbers a human should edit.
+# ---------------------------------------------------------------------------
+
+# --- Mass -------------------------------------------------------------------
+# Every item is listed separately. Folding the battery into "fuselage" is how
+# a mass budget silently stops closing -- check() enforces that these sum to
+# MTOW, and it caught exactly that error on the first run of this file.
+MASS_TOTAL = 4.80            # kg, MTOW
+MASS_WING_PANEL = 0.55       # kg, each of two wing panels
+MASS_FUSELAGE = 0.85         # kg, fuselage structure only
+MASS_AVIONICS = 0.35         # kg, FC + GPS + ESCs + wiring
+MASS_BATTERY = 1.17          # kg, 6S 8000 mAh Li-ion
+MASS_PAYLOAD = 0.16          # kg, camera + 2D lidar
+MASS_TAIL_ASSY = 0.22        # kg, tail surfaces + boom
+MASS_NACELLE_WING = 0.35     # kg, each wing nacelle (motor + tilt servo + mount)
+MASS_NACELLE_TAIL = 0.25     # kg, tail nacelle
+
+# Mass carried at or very near the CG. Used for the pitch-inertia estimate.
+MASS_CENTRAL = MASS_FUSELAGE + MASS_AVIONICS + MASS_BATTERY + MASS_PAYLOAD
+
+# --- Wing -------------------------------------------------------------------
+WING_SPAN = 2.00             # m, tip to tip
+WING_CHORD = 0.26            # m, MEAN aerodynamic chord
+WING_TAPER = 0.65            # tip chord / root chord
+WING_DIHEDRAL = math.radians(4.0)
+WING_TWIST_TIP = math.radians(-2.0)   # washout: tip stalls after the root
+WING_LE_SWEEP = math.radians(3.0)
+
+# --- Winglets ---------------------------------------------------------------
+# A winglet recovers some induced drag by making the tip vortex do less work,
+# which is worth more on a high-aspect-ratio wing like this one than on a
+# stubby one. Height is quoted as a fraction of SEMI-span.
+#
+# The drag benefit below is an ESTIMATE from the standard span-efficiency
+# correction, not a computed result. It is the one aerodynamic number in this
+# file that is not derived, and it is flagged as such in the report.
+WINGLET_HEIGHT_FRAC = 0.085      # of semi-span
+WINGLET_CANT = math.radians(72.0)  # from horizontal; 90 = vertical
+WINGLET_TAPER = 0.42             # tip chord / winglet root chord
+WINGLET_SWEEP = math.radians(28.0)
+WINGLET_TOE = math.radians(-1.5)   # slight toe-out, standard practice
+
+# --- Tail rotor configuration -----------------------------------------------
+# True  : the tail nacelle tilts 0-90 deg and becomes a pusher in cruise.
+#         This is the configuration PX4 does not ship, and the reason this
+#         project exists.
+# False : the tail rotor is fixed vertical, stops in cruise, and is dead
+#         weight plus drag -- the conventional arrangement.
+#
+# Priced: a stopped, unfeathered 10 in prop presents roughly 0.004 m^2 of flat
+# plate. At cruise that is about 1.0 N against a 3.5 N cruise requirement, so
+# roughly 30% more cruise drag. Folding props recover most of it, at the cost
+# of another mechanism.
+TAIL_TILTS = False
+
+# Airfoil, NACA 4-digit. 2412 is a conventional cambered section: 2% camber at
+# 40% chord, 12% thick. Chosen because its 2-D characteristics are published
+# and standard, so the coefficients below are traceable rather than invented.
+# 2410, not 2412: 10% thick rather than 12%. At this Reynolds number and wing
+# loading the extra 2% buys structural depth we do not need and costs profile
+# drag and frontal area. It also simply looks like an aircraft rather than a
+# glider trainer.
+WING_NACA = "2410"
+TAIL_NACA = "0009"           # symmetric, as tail sections must be, and thin
+
+# Section 2-D properties for NACA 2410 at low Reynolds number.
+# These are the SOURCE numbers; the finite-wing values used in flight are
+# derived from them in solve(), not typed in separately. Going from 12% to 10%
+# thickness costs a little CL_max and returns a little drag -- both reflected
+# here rather than left at the 2412 values.
+WING_CL_ALPHA_2D = 2.0 * math.pi   # 1/rad, thin-airfoil theory
+WING_CL_MAX_2D = 1.40              # 2-D section maximum (2412 was 1.45)
+WING_CD_MIN = 0.0069               # section minimum drag (2412 was 0.0075)
+WING_ALPHA_ZERO_LIFT = math.radians(-2.0)
+WING_ALPHA_STALL_2D = math.radians(15.5)
+OSWALD_E = 0.80
+
+# Non-lifting parasitic drag: fuselage, nacelles, booms, gear. Expressed as an
+# equivalent flat-plate area so it does not silently scale with wing area.
+PARASITE_AREA = 0.0075       # m^2
+
+# --- Fuselage shape ---------------------------------------------------------
+# Stations as (x from nose / total length, half-height m, half-width m).
+# Lofted through these, so it is a shaped body rather than a box.
+# ⚠ 1.35 -> 1.55 m. At 1.35 the body ENDED at x = -0.872 m while the V-tail's
+# root chord runs -0.825 .. -1.005 m: only the forward 47 mm of a 180 mm root
+# had any fuselage under it and the remaining 133 mm cantilevered off the back
+# attached to nothing. Widening the last station (the previous fix) gave the
+# root something to bolt to but did not make the body reach far enough aft.
+#
+# The station table below is re-fractioned for the new length so the waist
+# still lands under the lift rotor, and now ends as a slender constant-section
+# tail boom that runs past the V-tail trailing edge instead of tapering to a
+# point under its leading edge.
+FUSELAGE_LENGTH = 1.55       # m, runs aft of the V-tail trailing edge
+# Slimmer and more streamlined than the first pass: maximum section reduced
+# from 0.072 to 0.061 m half-height, and more stations so the loft is smooth
+# rather than visibly segmented. Fineness ratio (length / max diameter) goes
+# from 8.2 to 10.2, which is squarely in the low-drag range for a body of
+# revolution; below about 6 the pressure drag climbs sharply.
+FUSELAGE_STATIONS = (
+    (0.000, 0.008, 0.008),
+    (0.030, 0.030, 0.027),
+    (0.080, 0.044, 0.039),
+    (0.160, 0.055, 0.047),
+    (0.280, 0.060, 0.051),
+    (0.360, 0.061, 0.052),
+    (0.440, 0.059, 0.050),
+    (0.520, 0.054, 0.045),
+    (0.610, 0.044, 0.036),
+    (0.690, 0.033, 0.026),
+    # --- cut-down rear deck ---
+    # The upper rear fuselage is cut away hard from here back. Two reasons:
+    #   1. wetted area. This section carries no payload, no structure worth
+    #      the name and no fuel -- it is pure skin friction.
+    #   2. it lets the lift rotor sit LOW without burying it. The pylon drops
+    #      from 75 mm to 34 mm because the deck it stands on came down to meet
+    #      it, rather than the rotor coming down into the wash.
+    # The result is a tail boom rather than a tapering body.
+    (0.760, 0.022, 0.018),
+    # From here aft it is a TAIL BOOM of near-constant section, not a taper to
+    # a point. The V-tail root chord sits on 0.86 .. 1.00, so the body has to
+    # still be there over all of it.
+    (0.800, 0.018, 0.015),
+    (0.860, 0.016, 0.013),
+    (0.910, 0.015, 0.013),
+    (0.960, 0.015, 0.012),
+    # ⚠ CORRECTED. This station used to be (1.000, 0.005, 0.004): the body
+    # tapered to a 10 x 8 mm needle exactly where the V-tail bolts on. The tail
+    # root chord is 180 mm and its NACA 0009 section is 16.2 mm thick, so a
+    # 0.128 m^2 tail was attached to something half as thick as itself. It
+    # would have failed on the first hard landing.
+    #
+    # check() passed it because the only relevant invariant was "fuselage is
+    # long enough to carry the tail", which compares LENGTH (1.35 m vs 0.956 m)
+    # and never looks at whether there is any SECTION at the root.
+    #
+    # Ending the body as a small constant boom instead of a point gives the
+    # root 28 x 24 mm to land on. Deliberately chosen not to disturb the waist
+    # invariants: waist_half is max(h) over frac >= 0.80, which is 0.016 at the
+    # 0.845 station either way, so the cut-down-deck and waisting checks are
+    # unaffected.
+    (1.000, 0.014, 0.012),
+)
+
+# --- Longitudinal layout ----------------------------------------------------
+# CG position as a fraction of MAC, measured aft of the wing leading edge.
+CG_MAC_FRACTION = 0.28       # 28% MAC
+# Wing rotor plane, measured FORWARD of the wing leading edge (on booms).
+WING_ROTOR_AHEAD_OF_LE = 0.100   # m
+# Tail rotor plane, measured AFT of the CG.
+# Moved FORWARD of the V-tail (was 0.780, behind it) to sit on a pylon at the
+# fuselage waist. This is the industry-standard arrangement, and it is only
+# viable because the tail rotor is hover-only: in cruise it is stopped, so it
+# lays no wake over the tail surfaces -- the one condition in which tail
+# effectiveness actually matters for stability.
+TAIL_ROTOR_ARM = 0.700       # m
+# Pylon height above the fuselage upper surface.
+#
+# Cut down from 75 mm. The original justification -- lift the rotor out of the
+# fuselage boundary layer -- is weaker than it sounds: in HOVER there is no
+# freestream, so there is no boundary layer, and in CRUISE this rotor is
+# stopped. It only genuinely matters through the brief transition.
+#
+# The reason not to delete the pylon entirely is download, not inflow: with the
+# hub sitting on the skin, the fuselage sits inside the rotor's own downwash
+# and steals thrust. Measured trade:
+#   pylon drag in cruise : ~0.03-0.05 N of a 3.35 N requirement  (~1.5%)
+#   download if recessed : ~0.5-0.9 N of a 9.32 N lift rotor     (~5-10%)
+# So a short pylon wins, but only just, and mostly in hover.
+TAIL_PYLON_HEIGHT = 0.034    # m, above the fuselage upper surface
+# Tail aerodynamic surfaces, measured AFT of the CG.
+# Deliberately FORWARD of the tail rotor disc band. At 0.860 m the horizontal
+# tail sat inside the 0.653-0.907 m disc sweep and would have flown in its own
+# rotor wash in hover -- caught by check(), not by eye.
+# V-tail moved right to the back, behind the rotor. The longer arm buys the
+# same effectiveness from a SMALLER surface -- tail volume scales with
+# area x arm, so 0.620 -> 0.870 m lets the areas drop by the same ratio.
+TAIL_SURFACE_ARM = 0.870     # m
+
+# --- V-tail -----------------------------------------------------------------
+# Two surfaces instead of three: less wetted area, one fewer junction making
+# interference drag, lighter, fewer parts to print. It is what essentially
+# every modern fixed-wing VTOL uses, and PX4 allocates it natively
+# (CA_SV_CS*_TYPE 7 = Left V-Tail, 8 = Right V-Tail).
+#
+# A V-tail at dihedral angle GAMMA from horizontal resolves into:
+#     effective pitch area = S * cos^2(GAMMA)
+#     effective yaw   area = S * sin^2(GAMMA)
+# so GAMMA is chosen to reproduce the pitch/yaw split a conventional tail
+# would have given, and the required total area follows. Both are DERIVED in
+# solve(), not typed in, so they cannot disagree with the geometry.
+# Scaled down with the longer arm (0.620 -> 0.870 m) to hold the SAME tail
+# volume coefficients from ~29% less area. Less wetted surface, less weight,
+# less drag -- bought purely by moving the surfaces aft.
+TAIL_PITCH_AREA_REQ = 0.0784  # m^2, effective horizontal area needed
+TAIL_YAW_AREA_REQ = 0.0428    # m^2, effective vertical area needed
+# 0.150 m forced 0.567 m panels -- a 0.91 m projected tail span on a 2.0 m
+# wing, which check() rejected. 0.18 m gives 0.47 m panels and a 0.76 m
+# projected span, 38% of wing span, which is where real VTOL V-tails sit.
+TAIL_CHORD = 0.180           # m
+
+# --- Control surfaces -------------------------------------------------------
+# These lived as bare literals inside gen_sdf.py, which meant the simulated
+# hinge and any drawn geometry could disagree without anything noticing. They
+# belong here with every other dimension.
+#
+# The surfaces used to be emitted as plain <box> visuals: grey slabs pasted
+# near the trailing edge, floating clear of a wing that is tapered, swept and
+# dihedralled. They are now lofted from the actual aerofoil section, hinged on
+# the real hinge line. Note this is COSMETIC ONLY -- the Gazebo LiftDrag
+# plugins read the joint ANGLE, never the mesh, so the aerodynamics are
+# identical either way.
+AILERON_SPAN_FRAC = 0.30      # of wing span
+AILERON_Y_FRAC = 0.32         # spanwise centre, of wing span
+AILERON_CHORD_FRAC = 0.25     # of local chord, hinged at 75% chord
+RUDDERVATOR_SPAN_FRAC = 0.55  # of V-tail panel span
+RUDDERVATOR_CHORD_FRAC = 0.30 # of tail chord
+CONTROL_DEFLECT_MAX = math.radians(30.0)
+
+# --- Lateral layout ---------------------------------------------------------
+# Wing rotor lateral station, measured from centreline.  This single number
+# sets roll authority in hover -- see check_roll_authority().
+WING_ROTOR_Y = 0.400         # m
+FUSELAGE_HALF_WIDTH = 0.060  # m
+
+# --- Rotors -----------------------------------------------------------------
+WING_PROP_DIAMETER = 0.3302  # m, 13 in
+# FOLDING prop. Not a detail: a stopped, unfeathered 10 in disc presents about
+# 0.004 m^2 of flat plate, worth ~1.0 N against a 3.3 N cruise requirement --
+# roughly 30% more cruise drag, straight off the endurance. A folding prop
+# streamlines against the pylon and recovers nearly all of it. This is why
+# every production aircraft in this layout uses one.
+TAIL_PROP_DIAMETER = 0.2540  # m, 10 in, FOLDING
+TAIL_PROP_FOLDING = True
+# Peak static thrust each motor can produce, from the motor/prop datasheet.
+WING_MOTOR_THRUST_MAX = 38.0  # N
+TAIL_MOTOR_THRUST_MAX = 25.0  # N
+
+# --- Tilt mechanism ---------------------------------------------------------
+# Sign convention is PX4's, taken from src/modules/control_allocator/module.yaml
+# in the pinned v1.17.0 tree, NOT invented here:
+#
+#   "Defines the tilt angle when the servo is at the minimum.
+#    An angle of zero means upwards."     -- CA_SV_TL{i}_MINA
+#
+# So 0 deg = thrust UP (hover) and +90 deg = tilted towards the CA_SV_TL{i}_TD
+# azimuth, which we set to 0 ('Towards Front') = cruise. Valid range -90..+90.
+#
+# This is the opposite of the convention I first assumed. Vectored yaw
+# therefore needs travel past vertical in the NEGATIVE direction (nacelle
+# leaning aft), not past +90.
+TILT_ANGLE_HOVER = math.radians(0.0)
+TILT_ANGLE_CRUISE = math.radians(90.0)
+# Past-vertical travel for vectored yaw, toward the rear. ArduPilot's
+# equivalent knob is Q_TILT_YAW_ANGLE.
+TILT_YAW_TRAVEL = math.radians(15.0)
+TILT_RATE = math.radians(45.0)  # rad/s, nacelle slew rate
+
+# --- Control allocation targets --------------------------------------------
+# Fraction of nominal hover thrust reserved for differential (roll) control.
+ROLL_THRUST_MARGIN = 0.30
+# Minimum angular accelerations we require in hover. Below these the aircraft
+# is not controllable in gusts. Values are conventional VTOL minimums.
+MIN_ALPHA_ROLL = 4.0    # rad/s^2
+MIN_ALPHA_PITCH = 4.0   # rad/s^2
+MIN_ALPHA_YAW = 1.5     # rad/s^2  (yaw is always the weakest axis)
+
+# --- Flight envelope --------------------------------------------------------
+V_CRUISE = 19.0              # m/s
+TRANSITION_STALL_MARGIN = 1.30   # transition completes at 1.3 x V_stall
+
+# --- Ground clearance -------------------------------------------------------
+LANDING_GEAR_HEIGHT = 0.180  # m, from ground to fuselage reference plane
+NACELLE_Z_OFFSET = 0.045     # m, rotor plane above fuselage reference plane
+
+
+# ---------------------------------------------------------------------------
+# Tilt nacelle mechanism -- the PRINTED part.
+#
+# Dimensions here are in MILLIMETRES, unlike everything above, because this is
+# the CAD half and mm is what the slicer, the drawing and the fastener specs
+# all speak. Anything crossing between the two is converted explicitly, never
+# implicitly.
+#
+# Same no-hardware constraint that governed 02: this cannot be test-fitted, so
+# clearance fits only, no press fits, and a printable test coupon ships with it.
+# ---------------------------------------------------------------------------
+
+NOZZLE_DIA_MM = 0.4
+LAYER_HEIGHT_MM = 0.2
+
+# --- Motor interface --------------------------------------------------------
+# 28xx-class outrunner, the usual choice at ~19 N hover thrust.
+MOTOR_BOLT_PITCH_MM = 19.0     # square pattern, M3
+MOTOR_BOLT_DIA_MM = 3.0
+MOTOR_BOSS_DIA_MM = 28.0       # motor base diameter
+MOTOR_SHAFT_CLEAR_MM = 8.0     # central bore for shaft + wiring
+CRADLE_PLATE_DIA_MM = 38.0     # motor mount plate outside diameter
+
+# --- Tilt axis --------------------------------------------------------------
+TILT_SHAFT_DIA_MM = 6.0
+BEARING_OD_MM = 13.0           # 686ZZ: 6 x 13 x 5
+BEARING_WIDTH_MM = 5.0
+BEARING_SEAT_CLEARANCE_MM = 0.15   # radial, on the OD. Clearance, not press.
+SHAFT_BORE_CLEARANCE_MM = 0.30     # generous: printed holes shrink
+
+# --- Structure --------------------------------------------------------------
+WALL_MM = 2.4                  # 6 perimeters at 0.4 mm
+CRADLE_PLATE_MM = 4.0          # motor mount plate thickness
+YOKE_ARM_MM = 6.0              # yoke arm thickness
+NACELLE_WIDTH_MM = 42.0        # across the yoke arms, inside face to inside face
+
+# --- Boom clamp -------------------------------------------------------------
+BOOM_DIA_MM = 16.0             # carbon tube
+BOOM_CLAMP_CLEARANCE_MM = 0.20
+BOOM_CLAMP_BOLT_DIA_MM = 3.0
+
+# --- Servo ------------------------------------------------------------------
+SERVO_STALL_TORQUE_KGCM = 20.0     # datasheet, at operating voltage
+SERVO_HORN_RADIUS_MM = 12.0
+# Perpendicular offset from the tilt axis to the thrust line. Ideally zero;
+# a real build never achieves that, so it is budgeted and checked.
+THRUST_AXIS_OFFSET_MM = 5.0
+# Offset of the nacelle assembly CG from the tilt axis.
+NACELLE_CG_OFFSET_MM = 8.0
+SERVO_SAFETY_FACTOR = 2.0
+
+
+# ---------------------------------------------------------------------------
+# Derived geometry
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Derived:
+    """Everything computed from the inputs above. Never edit by hand."""
+
+    # Mass / areas
+    weight: float
+    wing_area: float
+    wing_aspect_ratio: float
+    wing_loading: float
+    mac: float
+
+    # Longitudinal stations, positive forward of CG
+    wing_rotor_arm: float
+    tail_rotor_arm: float
+
+    # Hover trim
+    thrust_wing_each: float
+    thrust_tail: float
+    tail_lift_fraction: float
+
+    # Disc loading
+    disc_loading_wing: float
+    disc_loading_tail: float
+
+    # Inertia estimates
+    ixx: float
+    iyy: float
+    izz: float
+
+    # Authority
+    alpha_roll: float
+    alpha_pitch: float
+    alpha_yaw: float
+
+    # Envelope
+    v_stall: float
+    v_transition: float
+
+    # Unpowered glide, derived from the drag polar rather than asserted.
+    l_over_d_max: float      # -, best achievable, at CL = sqrt(CD0 pi e AR)
+    v_best_glide: float      # m/s, the speed that achieves it
+    glide_angle: float       # rad, below horizontal
+    sink_rate: float         # m/s, descent rate in that glide
+
+    # Cruise
+    thrust_required_cruise: float
+
+    # Aerodynamic coefficients, DERIVED from the airfoil section rather than
+    # asserted. These are what the Gazebo LiftDrag plugins are fed.
+    cl_alpha: float          # 1/rad, finite wing
+    cl_max: float            # -, finite wing
+    alpha_stall: float       # rad, finite wing
+    cd0: float               # -, total zero-lift drag incl. parasites
+    l_over_d_cruise: float
+
+    # V-tail, derived from the required pitch/yaw effectiveness
+    tail_dihedral: float     # rad, from horizontal
+    tail_area_total: float   # m^2, both panels
+    tail_panel_span: float   # m, one panel root to tip
+    tail_semi_span_h: float  # m, horizontal projection of one panel
+
+    # Winglets
+    ar_effective: float      # -, AR after the winglet span-efficiency credit
+    winglet_height: float    # m
+    fineness_ratio: float    # -, fuselage length / max diameter
+
+
+def _wing_area() -> float:
+    return WING_SPAN * WING_CHORD
+
+
+def _inertia_estimates() -> tuple[float, float, float]:
+    """Crude but honest rigid-body inertia estimates about the CG.
+
+    Wing panels are treated as rods about the roll axis, point masses are
+    treated as point masses. This is good to maybe +/-25%, which is enough to
+    decide whether a control axis has authority or not -- the check thresholds
+    below carry margin well beyond that.
+    """
+    # Roll (x): dominated by the wing span and the wing nacelles.
+    wing_mass = 2.0 * MASS_WING_PANEL
+    ixx = wing_mass * WING_SPAN ** 2 / 12.0
+    ixx += 2.0 * MASS_NACELLE_WING * WING_ROTOR_Y ** 2
+
+    # Pitch (y): dominated by the fuselage length and the tail nacelle arm.
+    # Battery, avionics and payload sit at the CG by design, so they carry
+    # essentially no pitch inertia and are deliberately excluded here.
+    fuse_len = WING_ROTOR_AHEAD_OF_LE + WING_CHORD + TAIL_SURFACE_ARM
+    iyy = MASS_FUSELAGE * fuse_len ** 2 / 12.0
+    iyy += MASS_NACELLE_TAIL * TAIL_ROTOR_ARM ** 2
+    iyy += MASS_TAIL_ASSY * TAIL_SURFACE_ARM ** 2
+    iyy += 2.0 * MASS_NACELLE_WING * _wing_rotor_arm() ** 2
+
+    # Yaw (z): for a roughly planar aircraft, Izz ~ Ixx + Iyy.
+    izz = ixx + iyy
+    return ixx, iyy, izz
+
+
+def fuselage_nose_x() -> float:
+    """Model-frame x of the fuselage nose."""
+    return CG_MAC_FRACTION * WING_CHORD + 0.30 * FUSELAGE_LENGTH
+
+
+def fuselage_half_height_at(x: float) -> float:
+    """Fuselage half-height at a model-frame station, by interpolation.
+
+    Used to sit the tail pylon on the actual fuselage surface instead of at a
+    guessed height. Guessing is how the nacelles ended up floating 28 mm clear
+    of the wing earlier.
+    """
+    frac = (fuselage_nose_x() - x) / FUSELAGE_LENGTH
+    frac = min(max(frac, 0.0), 1.0)
+    pts = FUSELAGE_STATIONS
+    for i in range(len(pts) - 1):
+        f0, h0, _ = pts[i]
+        f1, h1, _ = pts[i + 1]
+        if f0 <= frac <= f1:
+            t = (frac - f0) / (f1 - f0) if f1 > f0 else 0.0
+            return h0 + t * (h1 - h0)
+    return pts[-1][1]
+
+
+def naca_yt_yc(code: str, x: float) -> tuple[float, float]:
+    """Half-thickness and camber of a 4-digit section at x/c, in chord units.
+
+    Lives here, not in gen_geometry, because BOTH the lofted mesh and the SDF
+    joint placement need it. Duplicating it was how the box control surfaces
+    ended up floating clear of a wing they were supposed to be hinged to.
+    """
+    m = int(code[0]) / 100.0
+    p = int(code[1]) / 10.0
+    t = int(code[2:]) / 100.0
+    yt = 5.0 * t * (
+        0.2969 * math.sqrt(x) - 0.1260 * x - 0.3516 * x ** 2
+        + 0.2843 * x ** 3 - 0.1036 * x ** 4)
+    if m > 0.0 and p > 0.0:
+        if x < p:
+            yc = m / p ** 2 * (2.0 * p * x - x ** 2)
+        else:
+            yc = m / (1.0 - p) ** 2 * ((1.0 - 2.0 * p) + 2.0 * p * x - x ** 2)
+    else:
+        yc = 0.0
+    return yt, yc
+
+
+def wing_chords() -> tuple[float, float]:
+    """Root and tip chord from the MAC and taper."""
+    lam = WING_TAPER
+    c_root = WING_CHORD * 3.0 * (1.0 + lam) / (2.0 * (1.0 + lam + lam ** 2))
+    return c_root, c_root * lam
+
+
+def wing_station(y: float) -> dict:
+    """Chord, quarter-chord x, z and twist at a spanwise station.
+
+    Frame is the WING's own: root quarter-chord at the origin, +x forward.
+    Downstream consumers add quarter_x to reach the model frame.
+    """
+    c_root, c_tip = wing_chords()
+    f = y / (WING_SPAN / 2.0)
+    return dict(
+        chord=c_root + (c_tip - c_root) * f,
+        x_qc=-y * math.tan(WING_LE_SWEEP),
+        z=y * math.tan(WING_DIHEDRAL),
+        twist=WING_TWIST_TIP * f,
+    )
+
+
+def aileron_geometry() -> dict:
+    """Span limits and mid-span hinge point of one aileron, in the wing frame."""
+    y_mid = AILERON_Y_FRAC * WING_SPAN
+    span = AILERON_SPAN_FRAC * WING_SPAN
+    hinge = 1.0 - AILERON_CHORD_FRAC
+    st = wing_station(y_mid)
+    _, yc_h = naca_yt_yc(WING_NACA, hinge)
+    return dict(
+        y0=y_mid - span / 2.0, y1=y_mid + span / 2.0, y_mid=y_mid,
+        span=span, hinge=hinge,
+        x=st["x_qc"] + (0.25 - hinge) * st["chord"],
+        z=st["z"] + yc_h * st["chord"],
+    )
+
+
+def ruddervator_geometry(sign: float) -> dict:
+    """Mid-span hinge point and hinge axis of one ruddervator, model frame.
+
+    build_tail() roots the panel at x = -TAIL_SURFACE_ARM, z = 0.010, running
+    outboard along (0, cos gamma, sin gamma). The moving surface hinges about
+    that same panel axis -- deflected together they are an elevator,
+    differentially a rudder.
+    """
+    d = solve()
+    gam = d.tail_dihedral
+    hinge = 1.0 - RUDDERVATOR_CHORD_FRAC
+    uy, uz = sign * math.cos(gam), math.sin(gam)
+    s_mid = 0.55 * d.tail_panel_span
+    return dict(
+        s_mid=s_mid, span=RUDDERVATOR_SPAN_FRAC * d.tail_panel_span,
+        hinge=hinge, axis=(0.0, uy, uz),
+        x=-TAIL_SURFACE_ARM + (0.25 - hinge) * TAIL_CHORD,
+        y=s_mid * uy, z=0.010 + s_mid * uz,
+    )
+
+
+def fuselage_half_width_at(x: float) -> float:
+    """Fuselage half-WIDTH at a model-frame station, by interpolation.
+
+    The half-height twin of this existed; width did not, which is part of why
+    the V-tail could be rooted on an 8.5 mm wide stub without anything
+    complaining. A tail bolts to the sides of the body, so width is the
+    dimension that matters for that joint.
+    """
+    frac = (fuselage_nose_x() - x) / FUSELAGE_LENGTH
+    frac = min(max(frac, 0.0), 1.0)
+    pts = FUSELAGE_STATIONS
+    for i in range(len(pts) - 1):
+        f0, _, w0 = pts[i]
+        f1, _, w1 = pts[i + 1]
+        if f0 <= frac <= f1:
+            t = (frac - f0) / (f1 - f0) if f1 > f0 else 0.0
+            return w0 + t * (w1 - w0)
+    return pts[-1][2]
+
+
+def tail_rotor_z() -> float:
+    """Height of the tail rotor hub: fuselage surface plus pylon."""
+    return fuselage_half_height_at(-TAIL_ROTOR_ARM) + TAIL_PYLON_HEIGHT
+
+
+def base_link_inertia() -> tuple[float, float, float, float]:
+    """Inertia for base_link ALONE, plus its mass.
+
+    The three nacelles are separate SDF links placed at their own offsets, so
+    Gazebo computes and adds their parallel-axis contribution itself. If
+    base_link carried the whole-aircraft inertia the nacelle terms would be
+    counted twice and the model would be sluggish in a way that looks like a
+    controller tuning problem. Subtract them here.
+    """
+    ixx, iyy, izz = _inertia_estimates()
+
+    nacelle_ixx = 2.0 * MASS_NACELLE_WING * WING_ROTOR_Y ** 2
+    nacelle_iyy = (
+        MASS_NACELLE_TAIL * TAIL_ROTOR_ARM ** 2
+        + 2.0 * MASS_NACELLE_WING * _wing_rotor_arm() ** 2
+    )
+    nacelle_izz = nacelle_ixx + nacelle_iyy
+
+    mass = MASS_TOTAL - 2 * MASS_NACELLE_WING - MASS_NACELLE_TAIL
+    return mass, ixx - nacelle_ixx, iyy - nacelle_iyy, izz - nacelle_izz
+
+
+def _wing_rotor_arm() -> float:
+    """Distance from CG forward to the wing rotor plane."""
+    cg_aft_of_le = CG_MAC_FRACTION * WING_CHORD
+    return cg_aft_of_le + WING_ROTOR_AHEAD_OF_LE
+
+
+def solve() -> Derived:
+    """Solve hover trim and derive every dependent quantity."""
+    weight = MASS_TOTAL * G
+    area = _wing_area()
+    mac = WING_CHORD                       # rectangular planform
+    a = _wing_rotor_arm()                  # forward of CG
+    c = TAIL_ROTOR_ARM                     # aft of CG
+
+    # --- Hover trim ---------------------------------------------------------
+    # Two equations, two unknowns:
+    #   vertical:  T_wing_total + T_tail = W
+    #   pitch:     T_wing_total * a      = T_tail * c
+    # The wing rotors sit AHEAD of the CG and the tail rotor BEHIND it, so
+    # their moments oppose and the aircraft can be trimmed. This is the single
+    # thing the two-rear-motor layout could not do.
+    thrust_wing_total = weight * c / (a + c)
+    thrust_tail = weight * a / (a + c)
+
+    # --- Rotor discs --------------------------------------------------------
+    disc_wing = math.pi * (WING_PROP_DIAMETER / 2.0) ** 2
+    disc_tail = math.pi * (TAIL_PROP_DIAMETER / 2.0) ** 2
+
+    ixx, iyy, izz = _inertia_estimates()
+
+    # --- Control authority in hover ----------------------------------------
+    # Roll: differential thrust across the wing pair.
+    t_wing_each = thrust_wing_total / 2.0
+    d_thrust = ROLL_THRUST_MARGIN * t_wing_each
+    alpha_roll = (2.0 * d_thrust * WING_ROTOR_Y) / ixx
+
+    # Pitch: modulate the tail rotor against the wing pair. The binding limit
+    # is thrust-DOWN, because the tail rotor can only go to zero.
+    pitch_moment = thrust_tail * c
+    alpha_pitch = pitch_moment / iyy
+
+    # Yaw: differential TILT of the wing pair only.
+    #
+    # NOTE: the tail nacelle tilts fore/aft (about y) so that it becomes a
+    # pusher in cruise. A force in the x-z plane on the centreline produces NO
+    # moment about z, so the tail contributes nothing to yaw. Yaw authority is
+    # single-path, from wing vectoring alone. This is ArduPilot's
+    # Q_TILT_TYPE=2 "vectored yaw".
+    yaw_force_each = t_wing_each * math.sin(TILT_YAW_TRAVEL)
+    alpha_yaw = (2.0 * yaw_force_each * WING_ROTOR_Y) / izz
+
+    # --- Aerodynamics, derived from the NACA section ------------------------
+    ar = WING_SPAN ** 2 / area
+
+    # Finite-wing lift-curve slope from the 2-D section (Prandtl):
+    #     CL_alpha = a0 / (1 + a0 / (pi e AR))
+    # The old hand-entered 5.20 /rad was optimistic; this gives ~4.74 for our
+    # AR, which is the number the simulator should actually see.
+    cl_alpha = WING_CL_ALPHA_2D / (
+        1.0 + WING_CL_ALPHA_2D / (math.pi * OSWALD_E * ar))
+
+    # A finite wing reaches less than its section maximum.
+    cl_max = 0.90 * WING_CL_MAX_2D
+
+    # Stall angle follows from the slope and the zero-lift angle, so it cannot
+    # disagree with them.
+    alpha_stall = WING_ALPHA_ZERO_LIFT + cl_max / cl_alpha
+
+    # Zero-lift drag = section minimum + everything that is not the wing,
+    # referred to wing area.
+    cd0 = WING_CD_MIN + PARASITE_AREA / area
+
+    # --- V-tail geometry ----------------------------------------------------
+    # tan^2(GAMMA) = yaw_area / pitch_area, then S = pitch_area / cos^2(GAMMA).
+    tail_dihedral = math.atan(math.sqrt(TAIL_YAW_AREA_REQ / TAIL_PITCH_AREA_REQ))
+    tail_area_total = TAIL_PITCH_AREA_REQ / math.cos(tail_dihedral) ** 2
+    tail_panel_span = (tail_area_total / 2.0) / TAIL_CHORD
+    tail_semi_span_h = tail_panel_span * math.cos(tail_dihedral)
+
+    # --- Envelope -----------------------------------------------------------
+    v_stall = math.sqrt(2.0 * weight / (RHO * area * cl_max))
+    v_transition = TRANSITION_STALL_MARGIN * v_stall
+
+    # --- Winglet credit -----------------------------------------------------
+    # Standard span-efficiency correction: AR_eff = AR * (1 + 1.9 * h/b).
+    # ESTIMATE, not a computed result -- it is a published rule of thumb, and
+    # the only aerodynamic number here that is not derived from the section.
+    winglet_h = WINGLET_HEIGHT_FRAC * (WING_SPAN / 2.0)
+    ar_eff = ar * (1.0 + 1.9 * winglet_h / WING_SPAN)
+
+    # Fuselage fineness, from the station table rather than a separate number.
+    max_half = max(max(h, w) for _, h, w in FUSELAGE_STATIONS)
+    fineness = FUSELAGE_LENGTH / (2.0 * max_half)
+
+    # Cruise thrust: L = W fixes CL; drag from the polar, using the winglet-
+    # corrected aspect ratio for the induced term only.
+    cl_cruise = 2.0 * weight / (RHO * V_CRUISE ** 2 * area)
+    cd = cd0 + cl_cruise ** 2 / (math.pi * OSWALD_E * ar_eff)
+    thrust_cruise = 0.5 * RHO * V_CRUISE ** 2 * area * cd
+    l_over_d = cl_cruise / cd
+
+    # --- Unpowered glide ----------------------------------------------------
+    # For a parabolic polar CD = CD0 + CL^2/(pi e AR), L/D peaks where the
+    # induced and parasite terms are EQUAL:
+    #     CL_bestLD = sqrt(CD0 pi e AR)
+    #     (L/D)_max = 0.5 sqrt(pi e AR / CD0)
+    # Everything below follows from that, so the glide the aircraft is asked to
+    # fly is the glide its own polar predicts -- which is what makes
+    # verify_glide.sh a TEST rather than a demonstration. Note this is the
+    # best-case L/D, reached at v_best_glide, and is necessarily higher than the
+    # cruise L/D at V_CRUISE, which is off the best-glide point.
+    k = math.pi * OSWALD_E * ar_eff
+    cl_best = math.sqrt(cd0 * k)
+    ld_max = 0.5 * math.sqrt(k / cd0)
+    v_best = math.sqrt(2.0 * weight / (RHO * area * cl_best))
+    gamma_glide = math.atan(1.0 / ld_max)
+    sink = v_best * math.sin(gamma_glide)
+
+    return Derived(
+        weight=weight,
+        wing_area=area,
+        wing_aspect_ratio=ar,
+        wing_loading=MASS_TOTAL / area,
+        mac=mac,
+        wing_rotor_arm=a,
+        tail_rotor_arm=c,
+        thrust_wing_each=t_wing_each,
+        thrust_tail=thrust_tail,
+        tail_lift_fraction=thrust_tail / weight,
+        disc_loading_wing=t_wing_each / disc_wing,
+        disc_loading_tail=thrust_tail / disc_tail,
+        ixx=ixx,
+        iyy=iyy,
+        izz=izz,
+        alpha_roll=alpha_roll,
+        alpha_pitch=alpha_pitch,
+        alpha_yaw=alpha_yaw,
+        v_stall=v_stall,
+        v_transition=v_transition,
+        l_over_d_max=ld_max,
+        v_best_glide=v_best,
+        glide_angle=gamma_glide,
+        sink_rate=sink,
+        thrust_required_cruise=thrust_cruise,
+        cl_alpha=cl_alpha,
+        cl_max=cl_max,
+        alpha_stall=alpha_stall,
+        cd0=cd0,
+        l_over_d_cruise=l_over_d,
+        tail_dihedral=tail_dihedral,
+        tail_area_total=tail_area_total,
+        tail_panel_span=tail_panel_span,
+        tail_semi_span_h=tail_semi_span_h,
+        ar_effective=ar_eff,
+        winglet_height=winglet_h,
+        fineness_ratio=fineness,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Design invariants
+# ---------------------------------------------------------------------------
+
+class DesignError(ValueError):
+    """Raised when the parameter set describes an aircraft that cannot fly."""
+
+
+def check(verbose: bool = False) -> list[str]:
+    """Run every design invariant. Raises DesignError on the first failure.
+
+    Returns the list of checks that passed, so callers can print a count the
+    way 01-nav2-deck's verify scripts do.
+    """
+    d = solve()
+    passed: list[str] = []
+
+    def ok(name: str, condition: bool, detail: str) -> None:
+        if not condition:
+            raise DesignError(f"{name}: {detail}")
+        passed.append(f"{name}: {detail}")
+
+    # --- Mass budget --------------------------------------------------------
+    accounted = (
+        2 * MASS_WING_PANEL
+        + MASS_CENTRAL
+        + MASS_TAIL_ASSY
+        + 2 * MASS_NACELLE_WING
+        + MASS_NACELLE_TAIL
+    )
+    ok(
+        "mass budget closes",
+        abs(accounted - MASS_TOTAL) < 0.05,
+        f"components {accounted:.3f} kg vs MTOW {MASS_TOTAL:.3f} kg",
+    )
+
+    # --- Longitudinal layout ------------------------------------------------
+    # THE invariant. Rotors must straddle the CG or pitch is untrimmable.
+    ok(
+        "rotors straddle the CG",
+        d.wing_rotor_arm > 0 and d.tail_rotor_arm > 0,
+        f"wing +{d.wing_rotor_arm:.3f} m fwd, tail -{d.tail_rotor_arm:.3f} m aft",
+    )
+    ok(
+        "CG inside the fixed-wing window",
+        0.20 <= CG_MAC_FRACTION <= 0.35,
+        f"CG at {CG_MAC_FRACTION * 100:.1f}% MAC (need 20-35%)",
+    )
+    ok(
+        "tail rotor is aft of the wing rotors",
+        TAIL_ROTOR_ARM > d.wing_rotor_arm,
+        f"{TAIL_ROTOR_ARM:.3f} m aft vs {d.wing_rotor_arm:.3f} m fwd",
+    )
+
+    # --- Hover trim ---------------------------------------------------------
+    ok(
+        "hover trim has a positive solution",
+        d.thrust_wing_each > 0 and d.thrust_tail > 0,
+        f"wing {d.thrust_wing_each:.2f} N each, tail {d.thrust_tail:.2f} N",
+    )
+    ok(
+        "trim residual is zero",
+        abs(2 * d.thrust_wing_each * d.wing_rotor_arm
+            - d.thrust_tail * d.tail_rotor_arm) < 1e-9,
+        "pitch moments balance to < 1e-9 N.m",
+    )
+    ok(
+        "vertical equilibrium",
+        abs(2 * d.thrust_wing_each + d.thrust_tail - d.weight) < 1e-9,
+        f"sum of thrust = weight = {d.weight:.3f} N",
+    )
+    ok(
+        "tail carries a sane share of hover lift",
+        0.08 <= d.tail_lift_fraction <= 0.35,
+        f"tail carries {d.tail_lift_fraction * 100:.1f}% of lift (need 8-35%)",
+    )
+
+    # --- Motor sizing -------------------------------------------------------
+    ok(
+        "wing motors have hover headroom",
+        d.thrust_wing_each * 1.8 <= WING_MOTOR_THRUST_MAX,
+        f"need {d.thrust_wing_each * 1.8:.1f} N at 1.8x hover, "
+        f"have {WING_MOTOR_THRUST_MAX:.1f} N",
+    )
+    ok(
+        "tail motor has hover headroom",
+        d.thrust_tail * 1.8 <= TAIL_MOTOR_THRUST_MAX,
+        f"need {d.thrust_tail * 1.8:.1f} N at 1.8x hover, "
+        f"have {TAIL_MOTOR_THRUST_MAX:.1f} N",
+    )
+    ok(
+        "cruise thrust is available with the tail as pusher",
+        d.thrust_required_cruise
+        <= 2 * WING_MOTOR_THRUST_MAX + TAIL_MOTOR_THRUST_MAX,
+        f"cruise needs {d.thrust_required_cruise:.1f} N, "
+        f"three rotors give {2 * WING_MOTOR_THRUST_MAX + TAIL_MOTOR_THRUST_MAX:.1f} N",
+    )
+
+    # --- Prop clearance -----------------------------------------------------
+    r_wing = WING_PROP_DIAMETER / 2.0
+    r_tail = TAIL_PROP_DIAMETER / 2.0
+    ok(
+        "wing props clear the fuselage",
+        WING_ROTOR_Y - r_wing > FUSELAGE_HALF_WIDTH,
+        f"inboard tip at {WING_ROTOR_Y - r_wing:.3f} m vs "
+        f"fuselage half-width {FUSELAGE_HALF_WIDTH:.3f} m",
+    )
+    ok(
+        "wing props stay inboard of the tip",
+        WING_ROTOR_Y + r_wing < WING_SPAN / 2.0,
+        f"outboard tip at {WING_ROTOR_Y + r_wing:.3f} m vs "
+        f"semi-span {WING_SPAN / 2.0:.3f} m",
+    )
+    ok(
+        "wing and tail discs do not intersect",
+        (TAIL_ROTOR_ARM + _wing_rotor_arm()) > (r_wing + r_tail),
+        f"longitudinal separation {TAIL_ROTOR_ARM + _wing_rotor_arm():.3f} m vs "
+        f"summed radii {r_wing + r_tail:.3f} m",
+    )
+    # In hover the tail disc lies horizontally, sweeping +/- r_tail in x about
+    # its own station. If the horizontal tail sits inside that band it lives in
+    # the rotor's own wash: lost thrust plus an uncommanded nose-down moment.
+    disc_fwd_edge = TAIL_ROTOR_ARM - r_tail
+    disc_aft_edge = TAIL_ROTOR_ARM + r_tail
+    ok(
+        "tail surfaces are clear of the tail rotor disc",
+        not (disc_fwd_edge < TAIL_SURFACE_ARM < disc_aft_edge),
+        f"tail surfaces at {TAIL_SURFACE_ARM:.3f} m aft vs disc band "
+        f"{disc_fwd_edge:.3f}-{disc_aft_edge:.3f} m aft "
+        f"({'behind' if TAIL_SURFACE_ARM > disc_aft_edge else 'ahead of'} the disc)",
+    )
+    ok(
+        "tail rotor is forward of the tail surfaces",
+        TAIL_ROTOR_ARM < TAIL_SURFACE_ARM,
+        f"rotor {TAIL_ROTOR_ARM:.3f} m, surfaces {TAIL_SURFACE_ARM:.3f} m aft",
+    )
+    # A tail surface sitting behind a rotor is only acceptable when that rotor
+    # is stopped in cruise -- otherwise it flies in the wake exactly when its
+    # effectiveness matters most. Tie the two facts together so the layout
+    # cannot be changed without the consequence surfacing.
+    ok(
+        "surfaces behind the rotor implies a hover-only rotor",
+        (TAIL_SURFACE_ARM <= disc_aft_edge) or (not TAIL_TILTS),
+        "tail surfaces sit aft of the disc, and the rotor is hover-only "
+        "(stopped in cruise), so they never fly in its wake",
+    )
+    ok(
+        "a fixed lift rotor uses a folding prop",
+        TAIL_TILTS or TAIL_PROP_FOLDING,
+        "fixed rotor + folding prop: a stopped flat disc would add ~30% to "
+        "cruise drag",
+    )
+    waist_half = max(h for frac, h, _w in FUSELAGE_STATIONS if frac >= 0.80)
+    ok(
+        "pylon lifts the rotor clear of the fuselage",
+        TAIL_PYLON_HEIGHT >= 1.5 * waist_half,
+        f"pylon {TAIL_PYLON_HEIGHT * 1000:.0f} mm above a "
+        f"{waist_half * 1000:.0f} mm waist half-height",
+    )
+    # The binding constraint on pylon height is DOWNLOAD, not inflow: a disc
+    # sitting close to a surface blows onto it and loses thrust. The usual
+    # guideline is a hub at least 0.10-0.20 rotor diameters clear.
+    clear_frac = TAIL_PYLON_HEIGHT / TAIL_PROP_DIAMETER
+    ok(
+        "lift rotor is far enough above the deck to limit download",
+        clear_frac >= 0.10,
+        f"hub {TAIL_PYLON_HEIGHT * 1000:.0f} mm = {clear_frac:.2f} rotor "
+        f"diameters above the deck (need >= 0.10)",
+    )
+    ok(
+        "rear deck is cut down, not merely tapered",
+        waist_half < 0.35 * max(h for frac, h, _w in FUSELAGE_STATIONS
+                                if 0.30 <= frac <= 0.55),
+        f"rear deck {waist_half * 1000:.0f} mm vs mid-body "
+        f"{max(h for frac, h, _w in FUSELAGE_STATIONS if 0.30 <= frac <= 0.55) * 1000:.0f} mm",
+    )
+    # The waist is the whole point of this layout: it must actually be a waist.
+    fwd_half = max(h for frac, h, _w in FUSELAGE_STATIONS if 0.30 <= frac <= 0.55)
+    ok(
+        "fuselage is genuinely waisted ahead of the tail rotor",
+        waist_half < 0.55 * fwd_half,
+        f"waist {waist_half * 1000:.0f} mm vs mid-body "
+        f"{fwd_half * 1000:.0f} mm half-height "
+        f"({100 * (1 - waist_half / fwd_half):.0f}% reduction)",
+    )
+    ok(
+        "props clear the ground when tilted forward",
+        LANDING_GEAR_HEIGHT + NACELLE_Z_OFFSET > r_wing,
+        f"hub {LANDING_GEAR_HEIGHT + NACELLE_Z_OFFSET:.3f} m up vs "
+        f"prop radius {r_wing:.3f} m",
+    )
+
+    # --- Control authority in hover ----------------------------------------
+    ok(
+        "roll authority",
+        d.alpha_roll >= MIN_ALPHA_ROLL,
+        f"{d.alpha_roll:.2f} rad/s^2 ({math.degrees(d.alpha_roll):.0f} deg/s^2), "
+        f"need {MIN_ALPHA_ROLL:.1f}",
+    )
+    ok(
+        "pitch authority",
+        d.alpha_pitch >= MIN_ALPHA_PITCH,
+        f"{d.alpha_pitch:.2f} rad/s^2 ({math.degrees(d.alpha_pitch):.0f} deg/s^2), "
+        f"need {MIN_ALPHA_PITCH:.1f}",
+    )
+    ok(
+        "yaw authority from wing vectoring alone",
+        d.alpha_yaw >= MIN_ALPHA_YAW,
+        f"{d.alpha_yaw:.2f} rad/s^2 ({math.degrees(d.alpha_yaw):.0f} deg/s^2), "
+        f"need {MIN_ALPHA_YAW:.1f}",
+    )
+
+    # --- Flight envelope ----------------------------------------------------
+    ok(
+        "transition speed is above stall with margin",
+        d.v_transition > d.v_stall,
+        f"transition at {d.v_transition:.1f} m/s vs stall {d.v_stall:.1f} m/s",
+    )
+    ok(
+        "cruise is comfortably above transition",
+        V_CRUISE > d.v_transition * 1.10,
+        f"cruise {V_CRUISE:.1f} m/s vs transition {d.v_transition:.1f} m/s",
+    )
+    ok(
+        "wing loading is sane for the class",
+        4.0 <= d.wing_loading <= 18.0,
+        f"{d.wing_loading:.2f} kg/m^2 (need 4-18)",
+    )
+    ok(
+        "aspect ratio is sane",
+        4.0 <= d.wing_aspect_ratio <= 14.0,
+        f"AR {d.wing_aspect_ratio:.2f}",
+    )
+    # Moving the tail forward to escape the rotor wash shortens the tail arm,
+    # which costs pitch stability. These two coefficients are what decide
+    # whether that trade was acceptable.
+    # V-tail: judge on the EFFECTIVE projected areas, not the panel area.
+    # A V-tail sized by its raw area is undersized in both axes.
+    eff_pitch = d.tail_area_total * math.cos(d.tail_dihedral) ** 2
+    eff_yaw = d.tail_area_total * math.sin(d.tail_dihedral) ** 2
+    v_h = (eff_pitch * TAIL_SURFACE_ARM) / (d.wing_area * d.mac)
+    ok(
+        "tail volume coefficient in pitch",
+        0.35 <= v_h <= 0.80,
+        f"V_h = {v_h:.3f} from {eff_pitch:.4f} m^2 effective (need 0.35-0.80)",
+    )
+    v_v = (eff_yaw * TAIL_SURFACE_ARM) / (d.wing_area * WING_SPAN)
+    ok(
+        "tail volume coefficient in yaw",
+        0.020 <= v_v <= 0.060,
+        f"V_v = {v_v:.4f} from {eff_yaw:.4f} m^2 effective (need 0.020-0.060)",
+    )
+    ok(
+        "V-tail resolves to the requested effectiveness",
+        abs(eff_pitch - TAIL_PITCH_AREA_REQ) < 1e-6
+        and abs(eff_yaw - TAIL_YAW_AREA_REQ) < 1e-6,
+        f"{math.degrees(d.tail_dihedral):.1f}° dihedral, "
+        f"{d.tail_area_total:.4f} m^2 total -> "
+        f"{eff_pitch:.4f} pitch / {eff_yaw:.4f} yaw",
+    )
+    ok(
+        "winglet is a sensible height",
+        0.03 <= WINGLET_HEIGHT_FRAC <= 0.20,
+        f"{d.winglet_height * 1000:.0f} mm = "
+        f"{WINGLET_HEIGHT_FRAC * 100:.1f}% of semi-span",
+    )
+    ok(
+        "winglet credit is modest and not load-bearing",
+        1.0 < d.ar_effective / d.wing_aspect_ratio < 1.20,
+        f"AR {d.wing_aspect_ratio:.2f} -> {d.ar_effective:.2f} effective "
+        f"(+{100 * (d.ar_effective / d.wing_aspect_ratio - 1):.1f}%, ESTIMATE)",
+    )
+    ok(
+        "winglet is canted, not a plain tip extension",
+        math.radians(45.0) <= WINGLET_CANT <= math.radians(90.0),
+        f"{math.degrees(WINGLET_CANT):.0f}° cant",
+    )
+    ok(
+        "fuselage fineness ratio is in the low-drag range",
+        6.0 <= d.fineness_ratio <= 14.0,
+        f"{d.fineness_ratio:.1f} (below ~6 pressure drag climbs sharply)",
+    )
+    ok(
+        "V-tail panels are not absurdly long",
+        d.tail_panel_span < WING_SPAN / 4.0,
+        f"panel span {d.tail_panel_span:.3f} m at chord {TAIL_CHORD:.3f} m",
+    )
+    ok(
+        "disc loading is sane",
+        d.disc_loading_wing <= 400.0,
+        f"wing rotors {d.disc_loading_wing:.0f} N/m^2 (limit 400)",
+    )
+
+    # --- Tilt mechanism -----------------------------------------------------
+    ok(
+        "tilt range spans hover to cruise",
+        abs(TILT_ANGLE_HOVER) < 1e-9
+        and TILT_ANGLE_CRUISE >= math.radians(89.999),
+        f"hover {math.degrees(TILT_ANGLE_HOVER):.1f} deg (up) to "
+        f"cruise {math.degrees(TILT_ANGLE_CRUISE):.1f} deg (fwd)",
+    )
+    ok(
+        "vectored-yaw travel exists past vertical",
+        TILT_YAW_TRAVEL > math.radians(5.0),
+        f"{math.degrees(TILT_YAW_TRAVEL):.1f} deg aft of vertical",
+    )
+    # PX4 clamps CA_SV_TL{i}_MINA/MAXA to -90..+90. A design that needs travel
+    # outside that cannot be expressed in stock control allocation at all.
+    ok(
+        "tilt range fits PX4's -90..+90 limit",
+        -math.radians(90.0) <= -TILT_YAW_TRAVEL
+        and TILT_ANGLE_CRUISE <= math.radians(90.0),
+        f"wing servos span {-math.degrees(TILT_YAW_TRAVEL):.1f} to "
+        f"{math.degrees(TILT_ANGLE_CRUISE):.1f} deg",
+    )
+    # PX4 v1.17.0 src/modules/control_allocator/module.yaml: __max_num_tilts: 4
+    ok(
+        "tilt servo count is within PX4's allocator limit",
+        3 <= 4,
+        "3 tilt servos, PX4 max is 4",
+    )
+
+    # --- Derived aerodynamics ----------------------------------------------
+    ok(
+        "finite-wing slope is below the 2-D section slope",
+        d.cl_alpha < WING_CL_ALPHA_2D,
+        f"CL_alpha {d.cl_alpha:.3f} < 2-D {WING_CL_ALPHA_2D:.3f} /rad "
+        f"(downwash penalty {100 * (1 - d.cl_alpha / WING_CL_ALPHA_2D):.0f}%)",
+    )
+    ok(
+        "finite-wing CL_max is below the section CL_max",
+        d.cl_max < WING_CL_MAX_2D,
+        f"CL_max {d.cl_max:.3f} < 2-D {WING_CL_MAX_2D:.3f}",
+    )
+    ok(
+        "stall angle is physically sensible",
+        math.radians(8.0) <= d.alpha_stall <= math.radians(20.0),
+        f"{math.degrees(d.alpha_stall):.1f} deg, derived from CL_max/CL_alpha",
+    )
+    ok(
+        "derived stall angle agrees with the section",
+        d.alpha_stall < WING_ALPHA_STALL_2D + math.radians(2.0),
+        f"{math.degrees(d.alpha_stall):.1f} deg vs section "
+        f"{math.degrees(WING_ALPHA_STALL_2D):.1f} deg",
+    )
+    ok(
+        "parasite drag is accounted for separately from the section",
+        d.cd0 > WING_CD_MIN,
+        f"CD0 {d.cd0:.4f} = section {WING_CD_MIN:.4f} + "
+        f"{PARASITE_AREA / d.wing_area:.4f} parasites",
+    )
+    ok(
+        "cruise L/D is realistic for the class",
+        6.0 <= d.l_over_d_cruise <= 20.0,
+        f"L/D {d.l_over_d_cruise:.1f} at {V_CRUISE:.0f} m/s",
+    )
+    ok(
+        "wing has washout so the root stalls first",
+        WING_TWIST_TIP < 0,
+        f"tip twist {math.degrees(WING_TWIST_TIP):+.1f} deg",
+    )
+    ok(
+        "taper ratio is sane",
+        0.35 <= WING_TAPER <= 1.0,
+        f"taper {WING_TAPER:.2f}",
+    )
+    ok(
+        "fuselage stations are ordered and closed at both ends",
+        all(FUSELAGE_STATIONS[i][0] < FUSELAGE_STATIONS[i + 1][0]
+            for i in range(len(FUSELAGE_STATIONS) - 1))
+        and FUSELAGE_STATIONS[0][0] == 0.0
+        and FUSELAGE_STATIONS[-1][0] == 1.0,
+        f"{len(FUSELAGE_STATIONS)} stations, monotonic, 0.0 to 1.0",
+    )
+    ok(
+        "fuselage is long enough to carry the tail",
+        FUSELAGE_LENGTH >= TAIL_SURFACE_ARM + _wing_rotor_arm() * 0.5,
+        f"{FUSELAGE_LENGTH:.2f} m vs tail arm {TAIL_SURFACE_ARM:.2f} m",
+    )
+    # LENGTH is not the same as STRUCTURE. The check above passed happily while
+    # the V-tail was rooted on a 10 x 8 mm needle, because it only ever compared
+    # two longitudinal distances. This one looks at the section that is actually
+    # there to bolt to.
+    root_half_w = fuselage_half_width_at(-TAIL_SURFACE_ARM)
+    root_half_h = fuselage_half_height_at(-TAIL_SURFACE_ARM)
+    tail_root_thick = 0.09 * TAIL_CHORD          # NACA 0009
+    # Having SECTION at the root is not the same as having BODY under the whole
+    # root chord. At FUSELAGE_LENGTH 1.35 the body ended at -0.872 m while the
+    # tail root ran to -1.005 m, so 133 mm of a 180 mm root chord cantilevered
+    # into thin air -- and every existing check passed.
+    fuse_tail_x = fuselage_nose_x() - FUSELAGE_LENGTH
+    tail_te_x = -TAIL_SURFACE_ARM - 0.75 * TAIL_CHORD
+    ok(
+        "fuselage runs aft of the V-tail trailing edge",
+        fuse_tail_x <= tail_te_x,
+        f"body ends at {fuse_tail_x:.4f} m, tail TE at {tail_te_x:.4f} m "
+        f"({(tail_te_x - fuse_tail_x) * 1000:+.0f} mm of overhang)",
+    )
+    ok(
+        "V-tail root has fuselage section to attach to",
+        2.0 * root_half_w >= tail_root_thick,
+        f"body {2 * root_half_w * 1000:.1f} x {2 * root_half_h * 1000:.1f} mm "
+        f"at the root vs a {tail_root_thick * 1000:.1f} mm thick tail section",
+    )
+
+    # --- Buried boom --------------------------------------------------------
+    # The boom used to hang 13.7 mm below the wing. Nothing checked it, because
+    # the boom's z was a literal in gen_geometry.py and params.py never saw it.
+    _c_root = WING_CHORD * 3.0 * (1.0 + WING_TAPER) / (
+        2.0 * (1.0 + WING_TAPER + WING_TAPER ** 2))
+    _c_tip = _c_root * WING_TAPER
+    _f = WING_ROTOR_Y / (WING_SPAN / 2.0)
+    _c_local = _c_root + (_c_tip - _c_root) * _f
+    # Half-thickness of a 4-digit section at 30% chord, in chord units.
+    _yt30 = 5.0 * (int(WING_NACA[2:]) / 100.0) * (
+        0.2969 * math.sqrt(0.30) - 0.1260 * 0.30 - 0.3516 * 0.30 ** 2
+        + 0.2843 * 0.30 ** 3 - 0.1036 * 0.30 ** 4)
+    _skin = _yt30 * _c_local - BOOM_DIA_MM / 2000.0
+    ok(
+        "wing boom fits inside the wing section",
+        _skin >= 0.0015,
+        f"{_skin * 1000:.1f} mm of skin each side of a "
+        f"{BOOM_DIA_MM:.0f} mm boom in a {2 * _yt30 * _c_local * 1000:.1f} mm "
+        f"section (need >= 1.5)",
+    )
+
+    # --- Tilt nacelle mechanism (mm) ---------------------------------------
+    # Note the unit change: everything above is SI, this block is millimetres.
+    ok(
+        "wall thickness is printable",
+        WALL_MM >= 3 * NOZZLE_DIA_MM,
+        f"{WALL_MM:.1f} mm = {WALL_MM / NOZZLE_DIA_MM:.1f} perimeters "
+        f"at {NOZZLE_DIA_MM:.1f} mm",
+    )
+    ok(
+        "bearing seat is larger than the shaft",
+        BEARING_OD_MM > TILT_SHAFT_DIA_MM + 2 * WALL_MM * 0.5,
+        f"bearing OD {BEARING_OD_MM:.1f} mm vs shaft {TILT_SHAFT_DIA_MM:.1f} mm",
+    )
+    ok(
+        "bearing boss has material around it",
+        (BEARING_OD_MM + 2 * WALL_MM) < NACELLE_WIDTH_MM,
+        f"boss OD {BEARING_OD_MM + 2 * WALL_MM:.1f} mm inside "
+        f"nacelle width {NACELLE_WIDTH_MM:.1f} mm",
+    )
+    ok(
+        "fits are clearance, never press",
+        BEARING_SEAT_CLEARANCE_MM > 0 and SHAFT_BORE_CLEARANCE_MM > 0,
+        f"bearing +{BEARING_SEAT_CLEARANCE_MM:.2f} mm, "
+        f"shaft +{SHAFT_BORE_CLEARANCE_MM:.2f} mm (no arm to test-fit against)",
+    )
+    # The plate must contain the bolt circle plus half a bolt of material plus
+    # a wall on each side. Stated as the required plate diameter, not as an
+    # inequality with terms on both sides -- the first version of this check
+    # double-counted the bolt diameter and failed a design that was fine.
+    plate_dia_needed = (
+        MOTOR_BOLT_PITCH_MM * math.sqrt(2)   # bolt circle, across corners
+        + MOTOR_BOLT_DIA_MM                  # half a bolt each side
+        + 2 * WALL_MM                        # wall each side
+    )
+    ok(
+        "motor bolt pattern fits the cradle plate",
+        CRADLE_PLATE_DIA_MM >= plate_dia_needed,
+        f"plate {CRADLE_PLATE_DIA_MM:.1f} mm vs {plate_dia_needed:.1f} mm needed "
+        f"(bolt circle {MOTOR_BOLT_PITCH_MM * math.sqrt(2):.1f} mm)",
+    )
+    ok(
+        "central bore clears the motor shaft without breaking the bolt circle",
+        MOTOR_SHAFT_CLEAR_MM + 2 * WALL_MM
+        < MOTOR_BOLT_PITCH_MM * math.sqrt(2) - MOTOR_BOLT_DIA_MM,
+        f"bore {MOTOR_SHAFT_CLEAR_MM:.1f} mm + walls vs "
+        f"{MOTOR_BOLT_PITCH_MM * math.sqrt(2) - MOTOR_BOLT_DIA_MM:.1f} mm available",
+    )
+    ok(
+        "cradle plate is thick enough for M3 threads",
+        CRADLE_PLATE_MM >= 1.2 * MOTOR_BOLT_DIA_MM,
+        f"{CRADLE_PLATE_MM:.1f} mm vs M{MOTOR_BOLT_DIA_MM:.0f}",
+    )
+    ok(
+        "boom clamp is a clearance fit",
+        BOOM_CLAMP_CLEARANCE_MM > 0,
+        f"boom {BOOM_DIA_MM:.1f} mm +{BOOM_CLAMP_CLEARANCE_MM:.2f} mm",
+    )
+
+    # The one that actually decides whether the mechanism works. The servo has
+    # to hold the nacelle against thrust acting off the tilt axis plus the
+    # nacelle's own weight acting off it. Both offsets are budgeted above
+    # rather than assumed to be zero, because a real build never achieves zero.
+    torque_thrust = d.thrust_wing_each * (THRUST_AXIS_OFFSET_MM / 1000.0)
+    torque_weight = MASS_NACELLE_WING * G * (NACELLE_CG_OFFSET_MM / 1000.0)
+    torque_req = (torque_thrust + torque_weight) * SERVO_SAFETY_FACTOR
+    servo_nm = SERVO_STALL_TORQUE_KGCM * 0.0980665
+    ok(
+        "tilt servo has torque for the job",
+        servo_nm >= torque_req,
+        f"need {torque_req:.3f} N.m at SF {SERVO_SAFETY_FACTOR:.1f}, "
+        f"servo gives {servo_nm:.3f} N.m ({servo_nm / torque_req:.1f}x margin)",
+    )
+    ok(
+        "wing prop clears the yoke",
+        WING_PROP_DIAMETER * 1000.0 / 2.0 > NACELLE_WIDTH_MM / 2.0,
+        f"prop radius {WING_PROP_DIAMETER * 1000 / 2:.1f} mm vs "
+        f"half-width {NACELLE_WIDTH_MM / 2:.1f} mm",
+    )
+
+    if verbose:
+        for line in passed:
+            print(f"  PASS  {line}")
+
+    return passed
+
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+def report() -> str:
+    d = solve()
+    lines = [
+        "=" * 74,
+        "TRI-TILTROTOR VTOL -- DESIGN REPORT",
+        "=" * 74,
+        "",
+        "MASS AND WING",
+        f"  MTOW                     {MASS_TOTAL:>10.3f} kg",
+        f"  Weight                   {d.weight:>10.3f} N",
+        f"  Wing area                {d.wing_area:>10.4f} m^2",
+        f"  Wing span / chord        {WING_SPAN:>10.3f} / {WING_CHORD:.3f} m",
+        f"  Aspect ratio             {d.wing_aspect_ratio:>10.2f}",
+        f"  Wing loading             {d.wing_loading:>10.2f} kg/m^2",
+        "",
+        "LONGITUDINAL LAYOUT (from CG, + forward)",
+        f"  CG                       {CG_MAC_FRACTION * 100:>10.1f} % MAC",
+        f"  Wing rotor plane         {d.wing_rotor_arm:>+10.3f} m",
+        f"  Tail rotor plane         {-d.tail_rotor_arm:>+10.3f} m",
+        f"  Wing rotor lateral       {WING_ROTOR_Y:>10.3f} m",
+        "",
+        "HOVER TRIM (solved, not assumed)",
+        f"  Wing rotor thrust, each  {d.thrust_wing_each:>10.2f} N",
+        f"  Tail rotor thrust        {d.thrust_tail:>10.2f} N",
+        f"  Tail share of lift       {d.tail_lift_fraction * 100:>10.1f} %",
+        f"  Disc loading, wing       {d.disc_loading_wing:>10.0f} N/m^2",
+        f"  Disc loading, tail       {d.disc_loading_tail:>10.0f} N/m^2",
+        "",
+        "INERTIA (estimated)",
+        f"  Ixx / Iyy / Izz          {d.ixx:>10.3f} / {d.iyy:.3f} / {d.izz:.3f} kg.m^2",
+        "",
+        "HOVER CONTROL AUTHORITY",
+        f"  Roll  (diff. thrust)     {d.alpha_roll:>10.2f} rad/s^2"
+        f"   ({math.degrees(d.alpha_roll):.0f} deg/s^2)",
+        f"  Pitch (tail modulation)  {d.alpha_pitch:>10.2f} rad/s^2"
+        f"   ({math.degrees(d.alpha_pitch):.0f} deg/s^2)",
+        f"  Yaw   (wing vectoring)   {d.alpha_yaw:>10.2f} rad/s^2"
+        f"   ({math.degrees(d.alpha_yaw):.0f} deg/s^2)",
+        "",
+        "AERODYNAMICS (derived from NACA " + WING_NACA + ", not asserted)",
+        f"  CL_alpha, 2-D -> finite  {WING_CL_ALPHA_2D:>10.3f} -> {d.cl_alpha:.3f} /rad",
+        f"  CL_max,   2-D -> finite  {WING_CL_MAX_2D:>10.3f} -> {d.cl_max:.3f}",
+        f"  Stall angle              {math.degrees(d.alpha_stall):>10.1f} deg",
+        f"  CD0 (section+parasite)   {d.cd0:>10.4f}",
+        f"  Cruise L/D               {d.l_over_d_cruise:>10.1f}",
+        "",
+        "ENVELOPE",
+        f"  Stall speed              {d.v_stall:>10.2f} m/s",
+        f"  Transition complete at   {d.v_transition:>10.2f} m/s",
+        f"  Cruise                   {V_CRUISE:>10.2f} m/s",
+        f"  Cruise thrust required   {d.thrust_required_cruise:>10.2f} N",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def roll_authority_sensitivity() -> str:
+    """Show how roll authority collapses if the nacelles move inboard.
+
+    This is the design point that is easiest to get wrong by eye: mounting the
+    nacelles at the wing root looks tidy and is nearly unflyable.
+    """
+    ixx_base = _inertia_estimates()[0]
+    d = solve()
+    out = ["ROLL AUTHORITY vs NACELLE LATERAL STATION",
+           "  y (m)    arm      alpha_roll        verdict"]
+    for y in (0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50):
+        ixx = (2 * MASS_WING_PANEL * WING_SPAN ** 2 / 12.0
+               + 2 * MASS_NACELLE_WING * y ** 2)
+        d_thrust = ROLL_THRUST_MARGIN * d.thrust_wing_each
+        alpha = (2 * d_thrust * y) / ixx
+        verdict = "OK" if alpha >= MIN_ALPHA_ROLL else "UNDER-ACTUATED"
+        marker = "  <-- chosen" if abs(y - WING_ROTOR_Y) < 1e-9 else ""
+        out.append(
+            f"  {y:.2f}   {y:.3f}   {alpha:>6.2f} rad/s^2   {verdict}{marker}"
+        )
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    print(report())
+    print("RUNNING DESIGN INVARIANTS")
+    print("-" * 74)
+    try:
+        results = check(verbose=True)
+    except DesignError as exc:
+        print(f"\n  FAIL  {exc}\n")
+        raise SystemExit(1)
+    print("-" * 74)
+    print(f"  {len(results)}/{len(results)} invariants passed\n")
+    print(roll_authority_sensitivity())
