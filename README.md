@@ -68,10 +68,7 @@ tilt_right   37.1   0.5   7.6   5.8   7.9   8.0  41.5  89.6  89.6  89.6
 The fixed lift rotor is emitted as a `fixed` joint, so it correctly never
 appears in this data — and all 3 rotors are confirmed spinning.
 
-⚠️ These numbers were re-measured after the airframe changed. An earlier
-revision with a *tilting* tail rotor was verified separately; those results are
-not carried forward here, because a different rotor layout, tail and mass
-distribution is a different aircraft.
+⚠️ These numbers were re-measured after the airframe changed.
 
 ---
 
