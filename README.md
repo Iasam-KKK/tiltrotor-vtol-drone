@@ -1,6 +1,6 @@
 # Tri-Tiltrotor VTOL — PX4 + Gazebo Harmonic
 
-![Tri-tiltrotor transitioning from hover to forward flight](media/hero.gif)
+![Tri-tiltrotor transitioning from hover to forward flight](media/renders/hover_hero.png)
 
 A **three-rotor tilt-rotor VTOL** for PX4 SITL, built to the layout production
 aircraft in this class actually use: two tilting rotors on the wing ahead of the
