@@ -33,7 +33,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/wing.stl",
         "scale": 1.0,
         "loc": [
-          0.007800000000000001,
+          0.032151089363837336,
           0,
           0
         ],
@@ -129,7 +129,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
         "scale": 1.0,
         "loc": [
-          -0.14621287258915602,
+          -0.12186178322531868,
           0.64,
           0.04793227906483581
         ],
@@ -145,7 +145,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_right.stl",
         "scale": 1.0,
         "loc": [
-          -0.14621287258915602,
+          -0.12186178322531868,
           -0.64,
           0.04793227906483581
         ],
@@ -355,7 +355,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/wing.stl",
         "scale": 1.0,
         "loc": [
-          0.007800000000000001,
+          0.032151089363837336,
           0,
           0
         ],
@@ -451,7 +451,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
         "scale": 1.0,
         "loc": [
-          -0.14621287258915602,
+          -0.12186178322531868,
           0.64,
           0.04793227906483581
         ],
@@ -467,7 +467,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_right.stl",
         "scale": 1.0,
         "loc": [
-          -0.14621287258915602,
+          -0.12186178322531868,
           -0.64,
           0.04793227906483581
         ],
@@ -677,7 +677,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/wing.stl",
         "scale": 1.0,
         "loc": [
-          0.007800000000000001,
+          0.032151089363837336,
           0,
           0
         ],
@@ -773,7 +773,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_left.stl",
         "scale": 1.0,
         "loc": [
-          -0.14621287258915602,
+          -0.12186178322531868,
           0.64,
           0.04793227906483581
         ],
@@ -789,7 +789,7 @@
         "mesh": "sim/models/tri_tiltrotor/meshes/aileron_right.stl",
         "scale": 1.0,
         "loc": [
-          -0.14621287258915602,
+          -0.12186178322531868,
           -0.64,
           0.04793227906483581
         ],

@@ -56,7 +56,7 @@ def wing_sections():
     """
     c_root, c_tip = P.wing_chords()
     semi = P.WING_SPAN / 2.0
-    qx = P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD
+    qx = P.wing_root_quarter_chord_x()
     root_le_model = qx + 0.25 * c_root          # model frame, +x forward
 
     def at(y):
@@ -113,7 +113,7 @@ def tail_sections(area_scale: float = 1.0):
     span = d.tail_panel_span * lin
     dih = d.tail_dihedral
 
-    qx = P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD
+    qx = P.wing_root_quarter_chord_x()
     wing_root_le_model = qx + 0.25 * P.wing_chords()[0]
     x_root = wing_root_le_model - root_le_model          # aft of wing root LE
 
@@ -130,7 +130,7 @@ def tail_sections(area_scale: float = 1.0):
             x_root + f * span * math.cos(dih) * math.tan(0.0),  # unswept
             f * span * math.cos(dih),
             z_root + f * span * math.sin(dih),
-            c, 0.0, is_rv))
+            c, math.degrees(P.TAIL_INCIDENCE), is_rv))
     return out
 
 
@@ -147,7 +147,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
 
     c_root, _ = P.wing_chords()
-    qx = P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD
+    qx = P.wing_root_quarter_chord_x()
     x_cg = qx + 0.25 * c_root       # CG, aft of the wing root LE, positive aft
 
     hinge_ail = 1.0 - P.AILERON_CHORD_FRAC

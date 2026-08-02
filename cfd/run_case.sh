@@ -46,15 +46,31 @@ step() { echo; echo "=== $1 ==="; }
 # Meshing is not idempotent: a leftover polyMesh from a previous alpha gets
 # reused silently and you solve the old geometry at the new angle.
 step "clean"
-rm -rf processor* constant/polyMesh [1-9]* 0.* log/*.log 2>/dev/null
+# postProcessing MUST go too. OpenFOAM does not overwrite an existing
+# coefficient.dat -- it writes coefficient_<startTime>.dat alongside it. Leave
+# the old one behind and the results step can read the PREVIOUS run's numbers,
+# which is how a killed 117-iteration run got reported as the answer while the
+# real 880-iteration run sat in the file next to it.
+rm -rf processor* constant/polyMesh [1-9]* 0.* log/*.log postProcessing 2>/dev/null
 
 step "blockMesh"
 blockMesh > "$LOG/blockMesh.log" 2>&1 || { tail -25 "$LOG/blockMesh.log"; exit 1; }
 
-step "surfaceFeatures  (edges for snapping)"
-surfaceFeatures > "$LOG/surfaceFeatures.log" 2>&1 \
-  || surfaceFeatureExtract > "$LOG/surfaceFeatures.log" 2>&1 \
-  || { tail -25 "$LOG/surfaceFeatures.log"; exit 1; }
+step "surfaceFeatureExtract  (edges for snapping)"
+# Try the modern name first, and keep the logs SEPARATE. Chaining both into one
+# file meant the fallback's error overwrote the real one, so the reported
+# failure was "cannot find surfaceFeatureExtractDict" when the actual cause was
+# that `surfaceFeatures` does not exist in OpenFOAM 2412 at all. The error
+# named the wrong problem entirely.
+if command -v surfaceFeatureExtract >/dev/null 2>&1; then
+    surfaceFeatureExtract > "$LOG/surfaceFeatureExtract.log" 2>&1 \
+      || { tail -25 "$LOG/surfaceFeatureExtract.log"; exit 1; }
+elif command -v surfaceFeatures >/dev/null 2>&1; then
+    surfaceFeatures > "$LOG/surfaceFeatures.log" 2>&1 \
+      || { tail -25 "$LOG/surfaceFeatures.log"; exit 1; }
+else
+    echo "neither surfaceFeatureExtract nor surfaceFeatures found" >&2; exit 1
+fi
 
 step "decomposePar"
 decomposePar -force > "$LOG/decomposePar.log" 2>&1 \
@@ -64,6 +80,21 @@ step "snappyHexMesh on $PROCS ranks  (the long part: 20-60 min)"
 mpirun -np "$PROCS" snappyHexMesh -overwrite -parallel \
     > "$LOG/snappyHexMesh.log" 2>&1 || { tail -40 "$LOG/snappyHexMesh.log"; exit 1; }
 grep -E "^Layer mesh|Added|nCells" "$LOG/snappyHexMesh.log" | tail -5
+
+step "re-decompose against the snapped mesh"
+# NOT redundant. The first decomposePar ran on the background mesh, whose only
+# patches were inlet/outlet/farfield, and it EXPANDS the "aircraft_.*" regex in
+# 0/ into explicit per-patch entries for the patches that exist at that moment.
+# snappyHexMesh then creates aircraft_fuselage, aircraft_wing and the rest --
+# which have no entry, so simpleFoam dies with
+#     Cannot find patchField entry for aircraft_fuselage
+# after the mesh has already taken half an hour to build. Reconstructing and
+# re-decomposing re-expands the regex against the final patch set.
+reconstructParMesh -constant > "$LOG/reconstructMesh.log" 2>&1 \
+  || { tail -20 "$LOG/reconstructMesh.log"; exit 1; }
+rm -rf processor*
+decomposePar -force > "$LOG/decomposePar2.log" 2>&1 \
+  || { tail -20 "$LOG/decomposePar2.log"; exit 1; }
 
 step "checkMesh"
 mpirun -np "$PROCS" checkMesh -parallel > "$LOG/checkMesh.log" 2>&1
@@ -76,11 +107,16 @@ mpirun -np "$PROCS" simpleFoam -parallel > "$LOG/simpleFoam.log" 2>&1
 tail -3 "$LOG/simpleFoam.log"
 
 step "reconstruct"
-reconstructParMesh -constant > "$LOG/reconstructMesh.log" 2>&1
 reconstructPar -latestTime > "$LOG/reconstructPar.log" 2>&1
 
 step "result"
-COEF=$(find "$CASE/postProcessing/forceCoeffs" -name "coefficient*.dat" 2>/dev/null | sort | tail -1)
+# Newest by MODIFICATION TIME, not by name. `sort | tail -1` is locale
+# dependent: under a UTF-8 locale it collates punctuation away, so
+# "coefficient.dat" and "coefficient_0.dat" compare as "coefficientdat" vs
+# "coefficient0dat" and the OLDER file wins. That silently reported a stale
+# run's numbers. Sorting on mtime cannot be fooled by a filename.
+COEF=$(find "$CASE/postProcessing/forceCoeffs" -name "coefficient*.dat" \
+         -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
 if [ -z "$COEF" ]; then
     echo "no force coefficients written -- check $LOG/simpleFoam.log"
     exit 1

@@ -137,3 +137,36 @@ cd /mnt/e/ME/UAV/projects/04-tiltrotor-vtol/cad
 The model is symlinked into PX4, so regenerating takes effect on the next run
 with no reinstall. If the airframe file changed, PX4 needs a rebuild — that is
 what `run_gui.sh` does for you.
+
+---
+
+## Looking at the CAD, and exporting STL
+
+Both run from Windows PowerShell, not WSL — FreeCAD is a Windows install here.
+
+```powershell
+cd E:\ME\UAV\projects\04-tiltrotor-vtol
+powershell -File tools\open_in_freecad.ps1   # GUI, coloured by role, annotated
+powershell -File tools\export_stl.ps1        # headless -> cad\out\stl\
+```
+
+Both regenerate the STEP assembly from `params.py` first, so what you see and
+what you export are what the parameters currently say.
+
+STL output lands in `cad/out/stl/`:
+
+| folder | frame | for |
+|---|---|---|
+| `assembly/` | flight positions | load all 19 together, get an assembled aircraft |
+| `print/` | each part on the origin, z=0 | dropping straight into a slicer |
+| `tri_tiltrotor_full.stl` | flight positions, one mesh | previews, marketplace, anything single-file |
+
+⚠ **Units.** These STLs are in **millimetres**. The meshes in
+`sim/models/tri_tiltrotor/meshes/` are in **metres** because Gazebo wants them
+that way — a slicer reads that wing as 2.1 mm long. Don't cross the streams.
+
+⚠ **13 of the 19 parts are over a 256 mm bed** (wing 2126 mm, structure
+1841 mm, fuselage 1550 mm). They export correctly and are watertight, but they
+are aircraft-scale assemblies, not print-ready parts — they need splitting with
+joints before anyone slices them. The six that fit as-is are the nacelle yokes
+and cradles, the tail motor mount, and `prop_tail`.

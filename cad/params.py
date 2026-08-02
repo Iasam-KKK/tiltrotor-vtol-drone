@@ -278,6 +278,23 @@ TAIL_YAW_AREA_REQ = 0.0428    # m^2, effective vertical area needed
 # projected span, 38% of wing span, which is where real VTOL V-tails sit.
 TAIL_CHORD = 0.180           # m
 
+# V-tail incidence, leading edge DOWN (negative), relative to the fuselage
+# waterline.
+#
+# WHY IT IS NOT ZERO. With the tail at 0 deg, AVL had to hold -8.67 deg of
+# ruddervator to trim at cruise. That is the elevator carrying, permanently, a
+# download the tail should be making by its own shape. The cost is about 1.6%
+# of cruise drag (measured: CDind 0.0068252 trimmed vs 0.0063203 with the
+# elevator locked at zero) and -- the part that matters more -- roughly a third
+# of the ruddervator's one-sided travel is consumed before the autopilot asks
+# for anything.
+#
+# Setting incidence is the standard fix and it is free: it changes no
+# stability derivative, only the angle at which the surface floats. Solved by
+# running AVL at two incidences and interpolating to zero elevator, so this
+# number is measured, not chosen. Re-solve with aero/solve_tail_incidence.sh.
+TAIL_INCIDENCE = math.radians(-2.49)
+
 # --- Control surfaces -------------------------------------------------------
 # These lived as bare literals inside gen_sdf.py, which meant the simulated
 # hinge and any drawn geometry could disagree without anything noticing. They
@@ -830,7 +847,7 @@ def mass_ledger() -> list[tuple[str, float, float]]:
     """
     d = solve()
     a = _wing_rotor_arm()
-    qx = CG_MAC_FRACTION * WING_CHORD - 0.25 * WING_CHORD
+    qx = mac_quarter_chord_x()   # mass centroid, not a placement
 
     items: list[tuple[str, float, float]] = [
         # Structure. The wing's mass centroid sits a little aft of the quarter
@@ -968,6 +985,45 @@ def wing_chords() -> tuple[float, float]:
     lam = WING_TAPER
     c_root = WING_CHORD * 3.0 * (1.0 + lam) / (2.0 * (1.0 + lam + lam ** 2))
     return c_root, c_root * lam
+
+
+def mac_spanwise_station() -> float:
+    """Spanwise y at which the local chord equals the MAC, for a straight taper."""
+    lam = WING_TAPER
+    return (WING_SPAN / 6.0) * (1.0 + 2.0 * lam) / (1.0 + lam)
+
+
+def mac_quarter_chord_x() -> float:
+    """x of the MEAN AERODYNAMIC quarter-chord, model frame (+x forward, CG at 0).
+
+    This is the one that has to land in the right place: putting the CG at
+    CG_MAC_FRACTION of the MAC means the MAC leading edge sits
+    CG_MAC_FRACTION * WING_CHORD forward of the CG, and its quarter-chord a
+    further 0.25 chord aft of that.
+    """
+    return (CG_MAC_FRACTION - 0.25) * WING_CHORD
+
+
+def wing_root_quarter_chord_x() -> float:
+    """x of the ROOT quarter-chord, model frame. NOT the same as the MAC's.
+
+    This distinction is the whole point of having two functions. The wing is
+    lofted outward from the root, so the root quarter-chord is what positions
+    it -- but the aircraft is balanced about the MEAN AERODYNAMIC chord, and on
+    a swept wing those two stations are not the same point. With 3 deg of
+    leading-edge sweep the MAC quarter-chord sits 24.4 mm AFT of the root's.
+
+    Placing the root at the MAC's x -- which is what
+    `CG_MAC_FRACTION * WING_CHORD - 0.25 * WING_CHORD` does, and what every
+    call site in this project used to do inline -- puts the whole wing 24.4 mm
+    too far aft. The CG then sits at 18.6% MAC while every printout claims
+    28%, and the aircraft is far more stable than designed. AVL measured the
+    consequence: 28.3% static margin against a 15% target.
+
+    The error was invisible because it is in the safe direction, and because
+    the expression was duplicated in eight files rather than written once.
+    """
+    return mac_quarter_chord_x() + mac_spanwise_station() * math.tan(WING_LE_SWEEP)
 
 
 def wing_station(y: float) -> dict:

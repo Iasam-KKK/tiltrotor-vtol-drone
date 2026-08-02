@@ -63,7 +63,7 @@
         </material>
       </visual>
       <visual name="wing_visual">
-        <pose>0.007800 0.000000 0.000000 0 0 0</pose>
+        <pose>0.032151 0.000000 0.000000 0 0 0</pose>
         <geometry><mesh><uri>model://tri_tiltrotor/meshes/wing.stl</uri></mesh></geometry>
         <material>
           <ambient>0.78 0.78 0.80 1</ambient>
@@ -414,7 +414,7 @@
       </axis>
     </joint>
     <link name="aileron_left">
-      <pose>-0.146213 0.640000 0.047932 0 0 0</pose>
+      <pose>-0.121862 0.640000 0.047932 0 0 0</pose>
       <inertial>
         <mass>1e-08</mass>
         <inertia>
@@ -443,7 +443,7 @@
       </axis>
     </joint>
     <link name="aileron_right">
-      <pose>-0.146213 -0.640000 0.047932 0 0 0</pose>
+      <pose>-0.121862 -0.640000 0.047932 0 0 0</pose>
       <inertial>
         <mass>1e-08</mass>
         <inertia>
@@ -670,7 +670,7 @@
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.923398</cda_stall>
       <cma_stall>0</cma_stall>
-      <cp>0.007800 0.500000 0.000000</cp>
+      <cp>0.032151 0.500000 0.000000</cp>
       <area>0.260000</area>
       <air_density>1.204100</air_density>
       <forward>1 0 0</forward>
@@ -688,7 +688,7 @@
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.923398</cda_stall>
       <cma_stall>0</cma_stall>
-      <cp>0.007800 -0.500000 0.000000</cp>
+      <cp>0.032151 -0.500000 0.000000</cp>
       <area>0.260000</area>
       <air_density>1.204100</air_density>
       <forward>1 0 0</forward>

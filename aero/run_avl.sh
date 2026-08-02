@@ -58,15 +58,24 @@ grep -E "CLa =|Cma =|Cnb =|Clb =|Clp =|Cmq =|Cnr =" "$OUT" | head -8
 echo
 grep -E "Neutral point|spirally stable" "$OUT" | head -4
 
-python3 - "$OUT" <<'PY'
+python3 - "$OUT" "$HERE/tri_tiltrotor.avl" <<'PY'
 import re, sys
 txt = open(sys.argv[1]).read()
 m = re.search(r"Neutral point\s+Xnp\s*=\s*([-\d.]+)", txt)
 if not m:
     raise SystemExit("no neutral point in the output")
 xnp = float(m.group(1))
-XREF, CREF = 0.085425, 0.26          # from cad/gen_avl.py, CG and MAC
+
+# Read Xref and Cref out of the .avl itself rather than hardcoding them.
+# They were hardcoded once; moving the wing 24.4 mm to fix the MAC-position
+# bug silently invalidated them and the static margin came out wrong by 9%
+# MAC. A constant copied out of a generated file is a copy that will drift.
+avl = open(sys.argv[2]).read().splitlines()
+vals = [l.split() for l in avl if l.strip() and not l.lstrip().startswith("#")]
+CREF = float(vals[3][1])        # Sref Cref Bref
+XREF = float(vals[4][0])        # Xref Yref Zref
 sm = (xnp - XREF) / CREF * 100
+print(f"  Xref {XREF:.5f}  Cref {CREF:.5f}   (read from tri_tiltrotor.avl)")
 print()
 print(f"  STATIC MARGIN = (Xnp - Xref)/Cref = ({xnp:.5f} - {XREF:.5f})/{CREF}")
 print(f"                = {sm:.1f}% MAC")

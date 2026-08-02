@@ -211,58 +211,72 @@ The pattern worth taking away: **five of the seven were checks whose *name*
 claimed a guarantee their *arithmetic* could not deliver.** A check with a
 constant on both sides (`3 <= 4`) cannot fail, and cannot help.
 
-### What AVL found: the CG is not where params.py thinks it is
+### What AVL found, and what it fixed
 
 `cad/gen_avl.py` emits a vortex-lattice model from the same `params.py`;
-`aero/run_avl.sh` trims it at the cruise CL. Two defects fell out immediately.
+`aero/run_avl.sh` trims it at the cruise CL. It immediately found two defects,
+both now fixed.
 
-**1. The MAC is located as if the wing were rectangular.** `params.py` puts the
-CG datum at the **root** quarter-chord (`qx`), but the wing has 3° of leading
-edge sweep, so the *mean aerodynamic* quarter-chord sits **24.4 mm further
-aft**. `params.py:1064` says it out loud — `mac = WING_CHORD  # rectangular
-planform` — while the wing it builds is tapered *and* swept.
+**1. The MAC was located as if the wing were rectangular.** The wing is placed
+by its **root** quarter-chord, but the aircraft balances about the **mean
+aerodynamic** chord — and on a wing with 3° of leading-edge sweep those are not
+the same station. The MAC quarter-chord sits **24.4 mm aft** of the root's.
+Every call site computed `CG_MAC_FRACTION * WING_CHORD - 0.25 * WING_CHORD`
+inline, in **eight separate files**, and all eight placed the root where the MAC
+belonged. The whole wing sat 24.4 mm too far aft.
 
-| | |
-|---|---|
-| CG that `params.py` intends | **28.0% MAC** |
-| CG the aircraft actually has | **18.6% MAC** |
-| error | 9.4% MAC = 24.4 mm |
+The result: `params.py` printed *"CG at 28% MAC"* while the aircraft actually
+had its CG at **18.6% MAC**. The error was invisible because it is in the safe
+direction — more nose-heavy, more stable — and because the expression was
+duplicated rather than written once.
 
-The MAC *magnitude* is right (0.26000 m, confirmed against `wing_station`);
-only its longitudinal position is wrong. The error is in the safe direction —
-more nose-heavy, more stable — which is exactly why nothing caught it.
+The fix names the distinction that caused it: `mac_quarter_chord_x()` and
+`wing_root_quarter_chord_x()` are now two functions in `params.py`, and nothing
+computes either inline. Measured after the fix: **CG at 28.00% MAC.**
 
-**2. It is over-stable, and it pays for that continuously.** AVL trimmed at
-CL 0.403:
+**2. The V-tail had no incidence, so the elevator carried the trim.** The
+ruddervators sat 8.67° from neutral in cruise, permanently. `params.py` had no
+tail incidence parameter at all. `aero/solve_tail_incidence.sh` runs AVL at two
+incidences and interpolates to zero elevator — the relationship is linear, so
+two runs give it exactly. Answer: **−2.49°**, leading edge down.
 
-| | measured | wanted |
+| trimmed at cruise CL 0.403 | before | after |
 |---|---|---|
-| Neutral point Xnp | 0.15898 m aft of the wing root LE | — |
-| **Static margin** | **28.3% MAC** | 8–15% |
-| Elevator to trim at cruise | **−8.67°** | near 0° |
-| Trim alpha | 3.80° | — |
-| Spiral criterion `Clb·Cnr/Clr·Cnb` | 1.065 | > 1 ✓ (marginal) |
+| **Static margin** | 28.3% MAC | **19.5%** |
+| **Trim elevator** | **−8.67°** | **+0.015°** |
+| Induced drag CDind | 0.0068252 | **0.0063360** (−7.2%) |
+| Span efficiency (Trefftz) | 1.144 | **1.236** |
+| Cm_α | −1.474 | −1.018 |
+| Cn_β (yaw stiffness) | 0.0658 | 0.0644 — kept |
+| Cmq (pitch damping) | −12.77 | −12.29 — kept |
+| Spiral `Clb·Cnr/Clr·Cnb` | 1.065 | **1.127** |
 
-Even with the MAC error corrected the margin would be ~17.7%, so this is not
-only the bug — the tail is genuinely oversized for the CG.
+Both axes of authority survived intact, which was the point of fixing the CG
+rather than shrinking the tail.
 
-**The −8.67° elevator is the expensive part.** A V-tail trimmed 8.67° from
-neutral is burning ruddervator travel and making trim drag in every second of
-cruise, and it is the specific thing tail *incidence* exists to remove.
-`params.py` has no tail incidence parameter at all.
+### Why the tail was not resized
 
-AVL also disagrees with the derived aerodynamics in useful directions:
+The obvious response to 28% static margin is a smaller tail. AVL says no.
+Sweeping tail area (`aero/sweep_tail.sh`):
 
-| | params.py | AVL | |
+| tail area | SM % | Cmq | Cn_β |
 |---|---|---|---|
-| CL_α (whole aircraft) | 4.742 /rad | **5.212 /rad** | params 9% low |
-| induced factor K | 0.04786 | **0.04202** | params 14% conservative |
-| Cm_α | not computed | **−1.474 /rad** | strongly stable |
-| Cn_β | not computed | **+0.0658** | directionally stable |
+| 1.00 | 28.3 | −12.77 | 0.0658 |
+| 0.70 | 22.1 | −9.11 | 0.0458 |
+| 0.50 | 17.9 | −6.73 | 0.0324 |
 
-Both aero disagreements are *inviscid* AVL against *theory*, so neither is
-truth — but they bracket it, and they point the same way: the polar is
-pessimistic on induced drag and pessimistic on lift slope.
+**Halving the tail buys 10 points of static margin and costs 47% of the pitch
+damping and 51% of the yaw stiffness** — and 0.0324 is below the ~0.05 usually
+wanted for directional stability. Cmq scales with area × arm², so it falls
+faster than the static margin improves; a tail *volume coefficient* cannot see
+that, which is exactly the trap the sizing literature warns about.
+
+It also fights itself: removing ~66 g of tail structure 0.870 m aft moves the
+CG **12.6 mm forward**, giving back nearly half the margin just bought. And a
+V-tail carries pitch and yaw on the *same* surfaces, so shrinking costs both at
+once — there is no trade available.
+
+Fixing the CG achieved more, for free.
 
 ### Aerodynamics are measured, not guessed
 

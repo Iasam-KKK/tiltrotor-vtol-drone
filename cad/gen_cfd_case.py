@@ -78,6 +78,11 @@ def main() -> None:
                          "turbulent and will overpredict drag")
     ap.add_argument("--iterations", type=int, default=3000)
     ap.add_argument("--procs", type=int, default=16)
+    ap.add_argument("--max-cells", type=int, default=5_000_000,
+                    help="snappyHexMesh maxGlobalCells. Meshing needs roughly "
+                         "1 GB per million cells plus overhead, so this must "
+                         "fit the RAM WSL actually has (`free -g`), not the "
+                         "RAM the machine has.")
     args = ap.parse_args()
 
     P.check()
@@ -111,6 +116,11 @@ def main() -> None:
     nx = int(round((x_hi - x_lo) / base))
     ny = int(round((y_hi - y_lo) / base))
     nz = int(round((z_hi - z_lo) / base))
+
+    # A cell centre, well ahead of and above the nose and clear of every solid.
+    def _cell_centre(lo, n_from_lo):
+        return lo + base * (n_from_lo + 0.5)
+    loc = (_cell_centre(x_lo, 58), _cell_centre(y_lo, 30), _cell_centre(z_lo, 30))
 
     case = CFD / "case"
     for sub in ("0", "system", "constant/triSurface"):
@@ -263,6 +273,14 @@ boundary
 );
 """)
 
+    # Two DIFFERENT region blocks, which is the trap. Under `geometry` a
+    # region only renames the STL solid to a patch name and OpenFOAM demands
+    # `name` there; under `refinementSurfaces` it carries the refinement
+    # levels. Using the refinement form in both places fails with
+    #     Entry 'name' not found in dictionary ".../regions/fuselage"
+    # which does not obviously say "wrong block".
+    geom_regions = chr(10).join(
+        f"                {r} {{ name aircraft_{r}; }}" for r in regions)
     surf_regions = "\n".join(
         f"                {r} {{ level (5 6); patchInfo {{ type wall; }} }}"
         for r in regions)
@@ -281,7 +299,7 @@ geometry
         name aircraft;
         regions
         {{
-{surf_regions}
+{geom_regions}
         }}
     }}
     nearBox   {{ type searchableBox; min (-1.4 -1.3 -0.5); max (1.0 1.3 0.6); }}
@@ -291,7 +309,7 @@ geometry
 castellatedMeshControls
 {{
     maxLocalCells       2000000;
-    maxGlobalCells      12000000;
+    maxGlobalCells      {args.max_cells};
     minRefinementCells  10;
     nCellsBetweenLevels 3;
     resolveFeatureAngle 30;
@@ -319,9 +337,13 @@ castellatedMeshControls
         nearBox {{ mode inside; levels ((1e15 4)); }}
     }}
 
-    // Must be OUTSIDE every solid. This point is well ahead of and above the
-    // nose; a point inside the fuselage silently meshes the interior instead.
-    locationInMesh (3.0 2.0 2.0);
+    // Must be OUTSIDE every solid AND strictly inside a cell -- not on a face.
+    // (3 2 2) looked fine and failed: with a 0.4 m background cell starting at
+    // y = z = -10, the values 2.0 land exactly on a cell boundary and snappy
+    // reports "Point (3 2 2) is not inside the mesh" while quoting a bounding
+    // box that plainly contains it. This point is computed to sit at a cell
+    // CENTRE, so it cannot regress if the domain or base size changes.
+    locationInMesh ({loc[0]:.4f} {loc[1]:.4f} {loc[2]:.4f});
 }}
 
 snapControls
@@ -352,7 +374,7 @@ addLayersControls
     nSmoothThickness    10;
     maxFaceThicknessRatio 0.5;
     maxThicknessToMedialRatio 0.3;
-    minMedianAxisAngle  90;
+    minMedialAxisAngle  90;
     nBufferCellsNoExtrude 0;
     nLayerIter          50;
     nRelaxedIter        20;
@@ -379,12 +401,20 @@ meshQualityControls
 mergeTolerance 1e-6;
 """)
 
-    write(case / "system" / "surfaceFeaturesDict",
-          head("dictionary", "surfaceFeaturesDict") + """
-surfaces ( "tri_tiltrotor.stl" );
-includedAngle   150;
-subsetFeatures  { nonManifoldEdges no; openEdges yes; }
-writeObj        no;
+    # surfaceFeatureExtract, NOT surfaceFeatures. ESI OpenFOAM 2412 ships only
+    # the former; the latter exists in some Foundation builds and in older ESI
+    # releases, reads a differently-named dict, and its absence shows up as
+    # "cannot find file surfaceFeatureExtractDict" from the fallback -- an
+    # error that names the wrong problem.
+    write(case / "system" / "surfaceFeatureExtractDict",
+          head("dictionary", "surfaceFeatureExtractDict") + """
+tri_tiltrotor.stl
+{
+    extractionMethod    extractFromSurface;
+    extractFromSurfaceCoeffs { includedAngle 150; }
+    subsetFeatures      { nonManifoldEdges no; openEdges yes; }
+    writeObj            no;
+}
 """)
 
     write(case / "system" / "decomposeParDict",
@@ -494,6 +524,12 @@ boundaryField
         "omega", "volScalarField", "[0 0 -1 0 0 0 0]", f"{omega:.6e}",
         "type fixedValue; value $internalField;",
         "type omegaWallFunction; value $internalField;"))
+
+    # Empty marker file so ParaView's OpenFOAM reader can open the case
+    # directly. The case lives on the Windows filesystem, so Windows-native
+    # ParaView reads it with no WSL and no X11 -- which sidesteps the WSLg
+    # black-window problem entirely rather than working around it.
+    (case / "case.foam").write_bytes(b"")
 
     print(f"wrote OpenFOAM case -> {case}")
     print(f"  model        {args.model}")

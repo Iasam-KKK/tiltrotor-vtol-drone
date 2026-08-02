@@ -33,7 +33,7 @@ def placed_parts() -> list[tuple[str, object]]:
     d = P.solve()
     a, c = d.wing_rotor_arm, d.tail_rotor_arm
     y = P.WING_ROTOR_Y
-    qx = P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD
+    qx = P.wing_root_quarter_chord_x()
     items: list[tuple[str, object]] = []
 
     # --- airframe shells, already in the model frame ---

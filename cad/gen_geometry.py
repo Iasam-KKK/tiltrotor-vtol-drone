@@ -449,7 +449,7 @@ def build_structure():
             z_r = st_r["z"] + yc * st_r["chord"]
             # Model frame: the wing mesh is offset by quarter_x downstream, so
             # apply it here too or the spars sit ahead of their own wing.
-            qx = P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD
+            qx = P.wing_root_quarter_chord_x()
             parts.append(_tube((qx + x_r, 0.0, z_r),
                                (qx + x_t, sgn * y_tip, z_t), r_spar))
 
@@ -772,7 +772,8 @@ def build_tail(cut: bool = True):
                               z_dir=(0, uy, uz))
                 with BuildSketch(plane):
                     with BuildLine():
-                        Polyline(*section_points(P.TAIL_NACA, c, 0.0, n=60),
+                        Polyline(*section_points(P.TAIL_NACA, c,
+                                                 P.TAIL_INCIDENCE, n=60),
                                  close=True)
                     make_face()
             loft()
@@ -874,8 +875,7 @@ def build_booms():
     c_local = c_root + (c_tip - c_root) * frac
     z_wing = y * math.tan(P.WING_DIHEDRAL)
     # Quarter chord at this station, in model x (swept aft).
-    x_qc = (P.CG_MAC_FRACTION * P.WING_CHORD - 0.25 * P.WING_CHORD) \
-        - y * math.tan(P.WING_LE_SWEEP)
+    x_qc = P.wing_root_quarter_chord_x() - y * math.tan(P.WING_LE_SWEEP)
 
     # Centre the tube on the camber line at max thickness (30% chord for a
     # 4-digit section), which is the deepest part of the box.

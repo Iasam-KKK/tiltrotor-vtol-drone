@@ -116,7 +116,9 @@ def geometry() -> dict:
     # Wing leading edge, forward of CG.
     le_x = P.CG_MAC_FRACTION * P.WING_CHORD
     # Wing quarter-chord (aerodynamic centre of a thin section).
-    quarter_x = le_x - 0.25 * P.WING_CHORD
+    # ROOT quarter-chord: this positions the wing mesh, the ailerons and the
+    # LiftDrag panels, so it must carry the sweep offset that le_x does not.
+    quarter_x = P.wing_root_quarter_chord_x()
 
     return {
         "d": d,
