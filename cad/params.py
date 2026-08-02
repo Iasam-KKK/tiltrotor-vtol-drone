@@ -113,16 +113,34 @@ TAIL_TILTS = False
 WING_NACA = "2410"
 TAIL_NACA = "0009"           # symmetric, as tail sections must be, and thin
 
-# Section 2-D properties for NACA 2410 at low Reynolds number.
-# These are the SOURCE numbers; the finite-wing values used in flight are
-# derived from them in solve(), not typed in separately. Going from 12% to 10%
-# thickness costs a little CL_max and returns a little drag -- both reflected
-# here rather than left at the 2412 values.
-WING_CL_ALPHA_2D = 2.0 * math.pi   # 1/rad, thin-airfoil theory
-WING_CL_MAX_2D = 1.40              # 2-D section maximum (2412 was 1.45)
-WING_CD_MIN = 0.0069               # section minimum drag (2412 was 0.0075)
-WING_ALPHA_ZERO_LIFT = math.radians(-2.0)
-WING_ALPHA_STALL_2D = math.radians(15.5)
+# Section 2-D properties for NACA 2410 -- MEASURED, not assumed.
+#
+# These were hand-estimated until XFOIL was run on the section at this
+# aircraft's own Reynolds numbers (aero/run_xfoil.sh, Ncrit 5). Every value
+# below is now interpolated to the CONVERGED STALL Reynolds number of 199,489,
+# which is itself a fixed point: CL_max sets the stall speed, the stall speed
+# sets the chord Reynolds number, and that sets CL_max.
+#
+# Ncrit 5, not XFOIL's default 9. Ncrit 9 models a smooth, clean, low-turbulence
+# surface. This wing is 3D printed.
+#
+# What the old estimates got wrong, and by how much:
+#   CL_max      1.400 -> 1.219   the big one; 15% optimistic, and it was
+#                               optimistic at exactly the low Reynolds number
+#                               where stall actually happens. Stall speed rises
+#                               10.74 -> 11.51 m/s and the whole envelope with it.
+#   CD_min      0.0069 -> 0.00868  the old value is roughly the Re 1,000,000
+#                               figure. This aircraft never goes above 393,000.
+#   CL_alpha    2*pi -> 6.0215  thin-airfoil theory is the inviscid limit; a
+#                               real boundary layer at Re 2e5 does not reach it.
+#   alpha_stall 15.5 -> 13.18 deg
+#
+# Re-measure with:  bash aero/run_xfoil.sh 5
+WING_CL_ALPHA_2D = 6.0215          # 1/rad, XFOIL at Re 199,489, Ncrit 5
+WING_CL_MAX_2D = 1.219             # 2-D section maximum, measured
+WING_CD_MIN = 0.00868              # section minimum drag, measured
+WING_ALPHA_ZERO_LIFT = math.radians(-2.069)
+WING_ALPHA_STALL_2D = math.radians(13.179)
 OSWALD_E = 0.80
 
 # Non-lifting parasitic drag: fuselage, nacelles, booms, gear. Expressed as an

@@ -42,3 +42,10 @@ cfd/log_alpha_*.txt
 # STEP files for the portfolio are published deliberately, not by accident.
 cad/out/*.stl
 sim/models/*/meshes/*.stl
+
+# AVL run output. The .avl and .mass inputs ARE generated and committed
+# (they are small and readable); the solver dump is not.
+aero/avl_out.txt
+
+# XFOIL polar dumps. Regenerate with aero/run_xfoil.sh.
+aero/polar_re*.txt

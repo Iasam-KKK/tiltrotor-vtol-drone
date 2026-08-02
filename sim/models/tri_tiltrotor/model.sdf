@@ -662,11 +662,11 @@
       <err_max>0.2</err_max>
     </plugin>
     <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
-      <a0>-0.034907</a0>
-      <cla>4.742027</cla>
-      <cda>0.021323</cda>
+      <a0>-0.036111</a0>
+      <cla>4.591433</cla>
+      <cda>0.023103</cda>
       <cma>0.0</cma>
-      <alpha_stall>0.230803</alpha_stall>
+      <alpha_stall>0.202834</alpha_stall>
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.923398</cda_stall>
       <cma_stall>0</cma_stall>
@@ -680,11 +680,11 @@
       <control_joint_rad_to_cl>-1.000000</control_joint_rad_to_cl>
     </plugin>
     <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
-      <a0>-0.034907</a0>
-      <cla>4.742027</cla>
-      <cda>0.021323</cda>
+      <a0>-0.036111</a0>
+      <cla>4.591433</cla>
+      <cda>0.023103</cda>
       <cma>0.0</cma>
-      <alpha_stall>0.230803</alpha_stall>
+      <alpha_stall>0.202834</alpha_stall>
       <cla_stall>-3.85</cla_stall>
       <cda_stall>-0.923398</cda_stall>
       <cma_stall>0</cma_stall>

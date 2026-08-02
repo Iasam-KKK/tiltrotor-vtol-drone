@@ -139,15 +139,15 @@
     ],
     [
       "Envelope",
-      "stall 10.7 / transition 14.0 / cruise 19 m/s"
+      "stall 11.5 / transition 15.0 / cruise 19 m/s"
     ],
     [
       "Cruise L/D",
-      "13.8  (best 15.7 at 14.8 m/s)"
+      "13.0  (best 15.0 at 14.5 m/s)"
     ],
     [
       "Glide",
-      "3.66 deg, sink 0.94 m/s"
+      "3.80 deg, sink 0.96 m/s"
     ],
     [
       "Hover authority",

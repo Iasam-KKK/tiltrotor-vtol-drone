@@ -1,0 +1,10 @@
+#  AVL mass file, generated from params.py
+Lunit = 1.0 m
+Munit = 1.0 kg
+Tunit = 1.0 s
+
+g   = 9.80665
+rho = 1.2041
+
+#  mass      x         y      z         Ixx       Iyy       Izz
+   4.6400  0.085424  0.0    0.0    0.47867  0.33302  0.81169

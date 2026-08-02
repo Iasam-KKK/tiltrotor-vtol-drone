@@ -188,20 +188,20 @@ param set-default SIM_GZ_SV_DIS6 143
 # ---------------------------------------------------------------------------
 # VTOL and fixed-wing envelope.  These come straight out of params.py's
 # aerodynamic solve rather than being guessed:
-#   stall 10.74 m/s -> transition 13.96 m/s -> cruise 19.0 m/s
+#   stall 11.51 m/s -> transition 14.96 m/s -> cruise 19.0 m/s
 # ---------------------------------------------------------------------------
 param set-default VT_TYPE 1
 param set-default VT_TILT_MC 0.1429
 param set-default VT_TILT_TRANS 0.6
 param set-default VT_TILT_FW 1.0000
-param set-default VT_ARSP_TRANS 14.0
-param set-default VT_ARSP_BLEND 11.8
+param set-default VT_ARSP_TRANS 15.0
+param set-default VT_ARSP_BLEND 12.7
 param set-default VT_B_TRANS_DUR 5.0
 param set-default VT_FWD_THRUST_EN 4
 param set-default VT_FWD_THRUST_SC 0.6
 
-param set-default FW_AIRSPD_STALL 10.7
-param set-default FW_AIRSPD_MIN 13.4
+param set-default FW_AIRSPD_STALL 11.5
+param set-default FW_AIRSPD_MIN 14.4
 param set-default FW_AIRSPD_TRIM 19.0
 param set-default FW_AIRSPD_MAX 28.5
 

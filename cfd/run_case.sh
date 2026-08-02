@@ -11,10 +11,29 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CASE="$HERE/case"
 PROCS="${PROCS:-16}"
 
+# Source OpenFOAM explicitly rather than relying on ~/.bashrc.
+#
+# The installer appends `source .../etc/bashrc` to ~/.bashrc, which works in a
+# terminal and NOT in a script: Ubuntu's ~/.bashrc returns early for
+# non-interactive shells, so the line is never reached. Running this script
+# with `bash cfd/run_case.sh` from anything non-interactive then reports
+# "OpenFOAM is not on PATH" on a machine where it is installed and working --
+# the same class of trap as GALLIUM_DRIVER elsewhere in this project.
+#
+# 2412 first, deliberately. The `openfoam` metapackage currently pulls 2606,
+# which is a RELEASE CANDIDATE; the dictionaries in this case are written for
+# 2412 and reproducibility matters more than being current.
+if ! command -v simpleFoam >/dev/null 2>&1; then
+    for rc in /usr/lib/openfoam/openfoam2412/etc/bashrc \
+              /usr/lib/openfoam/openfoam2406/etc/bashrc \
+              /usr/lib/openfoam/openfoam2312/etc/bashrc; do
+        [ -f "$rc" ] && { . "$rc" >/dev/null 2>&1; break; }
+    done
+fi
 command -v simpleFoam >/dev/null 2>&1 || {
     echo "OpenFOAM is not on PATH. Run: bash cfd/install_openfoam.sh" >&2
-    echo "(and open a new shell afterwards)" >&2
     exit 1; }
+echo "OpenFOAM: $(command -v simpleFoam)"
 [ -f "$CASE/constant/triSurface/tri_tiltrotor.stl" ] || {
     echo "geometry missing -- run cad/gen_cfd_surface.py then cad/gen_cfd_case.py" >&2
     exit 1; }

@@ -77,7 +77,7 @@ It commands the descent the polar predicts as an offboard **NED velocity**
 setpoint, then measures travel over height lost. Run unattended end to end
 (`sim/verify_glide_auto.sh`), the aircraft flies at **35.5 m/s** against a
 commanded 14.76, sinking **0.164 m/s** against a predicted 0.941 — an implied
-glide ratio of **217** for an airframe whose derived (L/D)max is 15.65.
+glide ratio of **217** for an airframe whose derived (L/D)max is ~15.
 
 The cause is not the drag model. **PX4 does not act on offboard NED velocity
 setpoints in fixed-wing mode**; the setpoint is accepted and ignored, and the
@@ -120,16 +120,16 @@ appears in this data — and all 3 rotors are confirmed spinning.
 
 | | |
 |---|---|
-| MTOW / span / wing area | 4.80 kg · 2.00 m · 0.520 m² |
-| Wing loading · aspect ratio | 9.23 kg/m² · 7.69 (**8.31 effective**, winglets) |
+| MTOW / span / wing area | 4.64 kg · 2.00 m · 0.520 m² |
+| Wing loading · aspect ratio | 8.92 kg/m² · 7.69 (**8.31 effective**, winglets) |
 | Airfoil | NACA 2410, taper 0.65, 4° dihedral, −2° washout, winglets |
 | Rotor stations from CG | wing **+0.173 m** (tilting), lift rotor **−0.700 m** (fixed) |
 | Tail | V-tail at **−0.870 m**, 36.4° dihedral, 0.128 m² |
-| Hover trim (solved) | wing 19.19 N each, lift rotor 9.32 N (**19.8%** of lift) |
+| Hover trim (solved) | wing 17.79 N each, lift rotor 9.92 N (**21.8%** of lift) |
 | Fuselage | 1.55 m, fineness **12.7**, waisted 70% at the pylon |
-| Stall → transition → cruise | 10.92 → 14.20 → 19.0 m/s |
-| Cruise L/D · best L/D | **14.1** at 19 m/s · **15.65** at 15.01 m/s |
-| Unpowered glide | **3.66°**, sink **0.957 m/s** |
+| Stall → transition → cruise | 11.51 → 14.96 → 19.0 m/s  (measured section) |
+| Cruise L/D · best L/D | **13.05** at 19 m/s · **15.04** at 14.46 m/s |
+| Unpowered glide | **3.81°**, sink **0.960 m/s** |
 | Servos · peak servo current | 4 surface + 2 tilt · **15 A** (needs its own BEC) |
 | Payload | 1080p nose camera, 45 g, 78° HFOV, 15° down |
 
@@ -211,16 +211,93 @@ The pattern worth taking away: **five of the seven were checks whose *name*
 claimed a guarantee their *arithmetic* could not deliver.** A check with a
 constant on both sides (`3 <= 4`) cannot fail, and cannot help.
 
-### Aerodynamics are derived, not typed in
+### What AVL found: the CG is not where params.py thinks it is
 
-Coefficients come from the NACA 2412 section via Prandtl, not from judgement:
+`cad/gen_avl.py` emits a vortex-lattice model from the same `params.py`;
+`aero/run_avl.sh` trims it at the cruise CL. Two defects fell out immediately.
 
-| | Hand-guessed | Derived |
+**1. The MAC is located as if the wing were rectangular.** `params.py` puts the
+CG datum at the **root** quarter-chord (`qx`), but the wing has 3° of leading
+edge sweep, so the *mean aerodynamic* quarter-chord sits **24.4 mm further
+aft**. `params.py:1064` says it out loud — `mac = WING_CHORD  # rectangular
+planform` — while the wing it builds is tapered *and* swept.
+
+| | |
+|---|---|
+| CG that `params.py` intends | **28.0% MAC** |
+| CG the aircraft actually has | **18.6% MAC** |
+| error | 9.4% MAC = 24.4 mm |
+
+The MAC *magnitude* is right (0.26000 m, confirmed against `wing_station`);
+only its longitudinal position is wrong. The error is in the safe direction —
+more nose-heavy, more stable — which is exactly why nothing caught it.
+
+**2. It is over-stable, and it pays for that continuously.** AVL trimmed at
+CL 0.403:
+
+| | measured | wanted |
 |---|---|---|
-| CL_α | 5.20 /rad | **4.742** |
-| CL_max | 1.20 | **1.305** |
-| CD0 | 0.028 | **0.0219** |
-| Stall | 15° asserted | **13.7°**, follows from CL_max/CL_α |
+| Neutral point Xnp | 0.15898 m aft of the wing root LE | — |
+| **Static margin** | **28.3% MAC** | 8–15% |
+| Elevator to trim at cruise | **−8.67°** | near 0° |
+| Trim alpha | 3.80° | — |
+| Spiral criterion `Clb·Cnr/Clr·Cnb` | 1.065 | > 1 ✓ (marginal) |
+
+Even with the MAC error corrected the margin would be ~17.7%, so this is not
+only the bug — the tail is genuinely oversized for the CG.
+
+**The −8.67° elevator is the expensive part.** A V-tail trimmed 8.67° from
+neutral is burning ruddervator travel and making trim drag in every second of
+cruise, and it is the specific thing tail *incidence* exists to remove.
+`params.py` has no tail incidence parameter at all.
+
+AVL also disagrees with the derived aerodynamics in useful directions:
+
+| | params.py | AVL | |
+|---|---|---|---|
+| CL_α (whole aircraft) | 4.742 /rad | **5.212 /rad** | params 9% low |
+| induced factor K | 0.04786 | **0.04202** | params 14% conservative |
+| Cm_α | not computed | **−1.474 /rad** | strongly stable |
+| Cn_β | not computed | **+0.0658** | directionally stable |
+
+Both aero disagreements are *inviscid* AVL against *theory*, so neither is
+truth — but they bracket it, and they point the same way: the polar is
+pessimistic on induced drag and pessimistic on lift slope.
+
+### Aerodynamics are measured, not guessed
+
+The section coefficients were hand-estimated, then derived from thin-airfoil
+theory, and are now **measured** — XFOIL run on NACA 2410 at this aircraft's own
+Reynolds numbers (`aero/run_xfoil.sh`, Ncrit 5, because the wing is printed).
+
+| 2-D section | Guessed | Theory | **XFOIL, measured** |
+|---|---|---|---|
+| CL_α | 5.20 /rad | 6.283 (2π) | **6.022** |
+| CL_max | 1.20 | 1.40 | **1.219** |
+| CD_min | 0.028 | 0.0069 | **0.00868** |
+| Stall α | 15° asserted | 15.5° | **13.18°** |
+
+The measurement is taken at the **converged stall Reynolds number of 199,489**,
+which is a fixed point: CL_max sets the stall speed, the stall speed sets the
+chord Reynolds number, and that sets CL_max.
+
+**Theory was wrong in the direction that flatters the aircraft, and worst where
+it matters.** CL_max was 15% optimistic at exactly the low Reynolds number where
+stall happens, and CD_min of 0.0069 turned out to be roughly the *Re 1,000,000*
+figure for a wing that never exceeds 393,000. What that cost:
+
+| | before | after |
+|---|---|---|
+| Stall speed | 10.74 m/s | **11.51 m/s** (+7.2%) |
+| Transition speed | 13.96 | 14.96 m/s |
+| CD0 (whole aircraft) | 0.02132 | 0.02310 |
+| (L/D)max | 15.65 | **15.04** (−3.9%) |
+
+All **118 invariants still pass** — the aircraft still closes, the envelope just
+sits 7% higher. One consequence is now decisive rather than marginal: the
+minimum-power speed (max endurance for a propeller aircraft) works out at
+**0.955 × stall**, i.e. below stall. It is not a speed this aircraft can fly.
+Loiter at 1.2 × stall = **13.81 m/s**.
 
 ---
 
@@ -297,8 +374,6 @@ Reproducibility is the point; these are the versions it was verified against.
 - **No constraint analysis.** Wing loading (8.92 kg/m², 1.83 lb/ft²) and
   installed thrust were chosen, not derived from intersecting hover, climb,
   transition and cruise constraints.
-- **No stability derivatives.** The CG sits at 28% MAC by convention; the
-  neutral point is never computed, so the static margin is asserted rather
-  than calculated.
+- **Stability is now computed, and it found two things** — see below.
 
 
