@@ -31,4 +31,6 @@ if ! timeout 8 ros2 topic list 2>/dev/null | grep -q '/fmu/out/'; then
     echo
 fi
 
-exec python3 "$HERE/teleop_tiltrotor.py"
+# "$@" matters: sim/verify_glide.sh drives this with --script, and without it
+# the flags are swallowed and the node sits waiting for keys that never come.
+exec python3 "$HERE/teleop_tiltrotor.py" "$@"

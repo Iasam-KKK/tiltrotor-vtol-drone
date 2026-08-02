@@ -1,6 +1,6 @@
 # Tri-Tiltrotor VTOL — PX4 + Gazebo Harmonic
 
-![Tri-tiltrotor transitioning from hover to forward flight](media/renders/hover_hero.png)
+![Tri-tiltrotor in the hover configuration, both wing rotors tilted thrust-up](media/renders/hover_hero.png)
 
 A **three-rotor tilt-rotor VTOL** for PX4 SITL, built to the layout production
 aircraft in this class actually use: two tilting rotors on the wing ahead of the
@@ -35,7 +35,11 @@ cd ~/PX4-Autopilot && make px4_sitl gz_tri_tiltrotor
 
 Both rendered from the **same CAD**, at the two ends of the tilt range. Nothing
 was moved by hand: `render/assembly.json` is generated from `cad/params.py`, so
-the pictures and the simulator are driven by one set of numbers.
+the pictures and the simulator are driven by one set of numbers. The camera is
+generated too — it solves its own distance by projecting the aircraft's
+bounding box onto the image plane, because a hardcoded camera position is a
+latent bug in a parametric project: change the span and a wingtip leaves the
+frame silently.
 
 ```bash
 powershell -File render/render_all.ps1     # 12 renders, ~6 s each on GPU
@@ -50,18 +54,51 @@ can re-run.
 
 | Claim | Measurement | How |
 |---|---|---|
-| Design closes | **87/87** invariants | `cad/params.py` |
+| Design closes | **118/118** invariants | `cad/params.py` |
 | Model is valid | **13/13** | `sim/validate_model.sh` |
 | CAD is manufacturable | STEP round-trip **0.000000 mm³** | `cad/gen_nacelle.py` |
 | **It hovers** | climbed to **10.071 m** vs 10.0 m commanded | `sim/verify_hover.sh` |
 | **It transitions** | both tilting nacelles **0.5° → 89.5°** | `sim/verify_transition.sh` |
 | Control surfaces fit the wing | cutter **100.0%** inside the wing solid | `cad/probe_ctrl_fit.py` |
 | Every avionics box fits its station | 7 items vs the lofted section | `cad/params.py` |
-| **It glides** | measured L/D vs the derived polar | `sim/verify_glide.sh` |
+| ~~It glides~~ | **NOT VERIFIED — see below** | `sim/verify_glide.sh` |
 
-⚠️ The hover and transition rows above were measured **before** the pitch and
-geometry corrections below. They have not been re-run since. Treat them as
-evidence the mechanism works, not as current numbers.
+The hover and transition rows were re-measured after the pitch and geometry
+corrections: hover reached **10.068 m** against 10.0 m commanded (5/5), and
+both tilting nacelles ran **0.0° → 89.6° / 89.5°** with 3/3 rotors turning.
+
+### The glide test does not currently test anything
+
+`sim/verify_glide.sh` was the only script here that tests the **aerodynamic**
+model rather than a mechanism, and it is the one that does not work. It is
+listed as unverified above rather than quietly dropped.
+
+It commands the descent the polar predicts as an offboard **NED velocity**
+setpoint, then measures travel over height lost. Run unattended end to end
+(`sim/verify_glide_auto.sh`), the aircraft flies at **35.5 m/s** against a
+commanded 14.76, sinking **0.164 m/s** against a predicted 0.941 — an implied
+glide ratio of **217** for an airframe whose derived (L/D)max is 15.65.
+
+The cause is not the drag model. **PX4 does not act on offboard NED velocity
+setpoints in fixed-wing mode**; the setpoint is accepted and ignored, and the
+fixed-wing controller holds altitude at its own airspeed. The measurement was
+never of a glide. Two things kept this hidden:
+
+- The script's only sanity check was "did it descend at all". Powered
+  near-level flight descends slightly, and dividing by a near-zero sink rate
+  produces a magnificent glide ratio. There is now a **speed gate**: if ground
+  speed exceeds 1.35 × the commanded best-glide speed, it reports powered
+  flight instead of a number.
+- The line that prints the comparison had a shell-quoting bug that crashed it
+  (`g['v_best_glide_ms']` inside a single-quoted shell block ends the string).
+  It had never once run, because every previous attempt exited earlier at the
+  "not descending" branch. **A test that has never reached its assertion is
+  not a passing test.**
+
+The honest position: the drag polar is derived and traceable, and it is
+**untested**. Testing it needs a throttle-cut path — commanding zero thrust
+directly, or a fixed-wing descent PX4 will actually fly — not a velocity
+setpoint.
 
 Nacelle angle through the manoeuvre, read from Gazebo's joint state rather than
 from a log line (0° = thrust up, 90° = thrust forward):
@@ -129,7 +166,9 @@ cad/params.py ──┬─→ gen_sdf.py           → sim/models/tri_tiltrotor/
                 ├─→ gen_manifest.py      → render/assembly.json  (Blender)
                 ├─→ gen_flight_params.py → sim/ros2/flight_params.json  (ROS 2)
                 ├─→ gen_layout.py        → docs/equipment-bay.svg
-                └─→ gen_bom.py           → docs/BOM.csv
+                ├─→ gen_bom.py           → docs/BOM.csv
+                ├─→ gen_cfd_surface.py   → cfd/geometry/  (wetted OML only)
+                └─→ gen_cfd_case.py      → cfd/case/      (OpenFOAM)
 ```
 
 `gen_flight_params.py` exists because the ROS 2 teleop node runs under WSL's
@@ -142,7 +181,7 @@ and would drift the moment the polar changed.
 See [`RUN.md`](RUN.md) — three commands, plus the environment traps that make
 the difference between "it works" and "it silently does nothing".
 
-`params.check()` runs 50 invariants in arithmetic *before* any CAD kernel or
+`params.check()` runs 118 invariants in arithmetic *before* any CAD kernel or
 simulator starts, and refuses to emit an aircraft that cannot fly. It has
 already caught, on real runs:
 
@@ -156,7 +195,7 @@ already caught, on real runs:
 
 Every one of these passed the invariant suite as it stood. They are listed with
 what was wrong, how it was actually found, and what now prevents a repeat —
-because "we have 87 checks" is worth nothing next to what the checks missed.
+because "we have 118 checks" is worth nothing next to what the checks missed.
 
 | Defect | Found by | Why the checks missed it |
 |---|---|---|
@@ -219,6 +258,7 @@ docs/    build notes and the environment gotchas
 | `sim/validate_model.sh` | SDFormat validity, structure, headless load |
 | `sim/verify_hover.sh` | commands takeoff, measures altitude from Gazebo's pose topic |
 | `sim/verify_transition.sh` | reads actual tilt joint angles through the manoeuvre |
+| `sim/verify_glide_auto.sh` | PX4 + agent + scripted flight + glide measurement, unattended |
 | `sim/capture_video.sh` | headless flight recording, Gazebo → ROS 2 → MP4 |
 | `sim/run_gui.sh` | interactive run with the Gazebo GUI |
 
@@ -249,5 +289,16 @@ Reproducibility is the point; these are the versions it was verified against.
   ±25%. The control-authority margins are wide enough that this does not change
   any conclusion, but it is an estimate.
 - **The transition is verified as "the nacelles rotate through 90° in flight".**
+- **The drag polar is untested.** See the glide section above. It is derived
+  from the section and the planform and nothing has yet measured it.
+- **No endurance figure exists.** Battery mass is an input to `params.py`, not
+  a result: there is no power-required calculation and no flight-time estimate,
+  so the aircraft cannot currently answer the first question any buyer asks.
+- **No constraint analysis.** Wing loading (8.92 kg/m², 1.83 lb/ft²) and
+  installed thrust were chosen, not derived from intersecting hover, climb,
+  transition and cruise constraints.
+- **No stability derivatives.** The CG sits at 28% MAC by convention; the
+  neutral point is never computed, so the static margin is asserted rather
+  than calculated.
 
 

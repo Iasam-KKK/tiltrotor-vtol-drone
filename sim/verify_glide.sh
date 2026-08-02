@@ -46,6 +46,16 @@ import sys, math, time, json, os
 fp = json.load(open(sys.argv[1]))
 g = fp["glide"]
 
+# Pull these out BEFORE any f-string. This whole program is embedded in a
+# single-quoted shell string, so a single quote anywhere in it -- including
+# inside an f-string subscript like g[<quote>v_best_glide_ms<quote>] -- ends
+# the shell string and Python then sees a bare name. That bug sat here
+# undetected because it is past the "not actually gliding" early exit, so the
+# line had never once been reached.
+PRED_LD    = g["l_over_d_max"]
+PRED_V     = g["v_best_glide_ms"]
+PRED_SINK  = g["sink_rate_ms"]
+
 t0 = None
 name = None
 vals = []
@@ -91,7 +101,7 @@ print(f"  altitude lost      {dz:8.2f} m")
 if dt > 0:
     print(f"  ground speed       {dh / dt:8.2f} m/s")
     print(f"  sink rate          {dz / dt:8.3f} m/s   "
-          f"(predicted {g[chr(115)+chr(105)+chr(110)+chr(107)+chr(95)+chr(114)+chr(97)+chr(116)+chr(101)+chr(95)+chr(109)+chr(115)]:.3f})")
+          f"(predicted {PRED_SINK:.3f})")
 
 print()
 if dz <= 0.5:
@@ -99,11 +109,27 @@ if dz <= 0.5:
     print("           Press g in the teleop and re-run while it is gliding.")
     raise SystemExit(1)
 
+# Speed gate. Altitude lost alone cannot tell a glide from powered flight that
+# happens to be sinking, and dividing by a near-zero sink rate turns a powered
+# cruise into a spectacular glide ratio. If the aircraft is flying far faster
+# than the speed the polar asked for, the throttle is not closed and no ratio
+# computed from this run means anything.
+v_gnd = dh / dt if dt > 0 else 0.0
+if v_gnd > 1.35 * PRED_V:
+    print(f"  VERDICT: NOT a glide. Ground speed {v_gnd:.1f} m/s against a")
+    print(f"           commanded {PRED_V:.2f} m/s -- the aircraft is under power.")
+    print( "           PX4 does not track offboard NED velocity setpoints in")
+    print( "           fixed-wing mode; the setpoint is accepted and ignored,")
+    print( "           and the FW controller holds altitude at its own airspeed.")
+    print(f"           (A ratio computed here would read {dh / dz:.0f}, which is")
+    print( "            not a number this airframe can produce.)")
+    raise SystemExit(2)
+
 ld = dh / dz
-pred = g["l_over_d_max"]
+pred = PRED_LD
 err = 100.0 * (ld - pred) / pred
 print(f"  MEASURED glide ratio  {ld:6.2f}")
-print(f"  PREDICTED (L/D)max    {pred:6.2f}   at {g['v_best_glide_ms']:.2f} m/s")
+print(f"  PREDICTED (L/D)max    {pred:6.2f}   at {PRED_V:.2f} m/s")
 print(f"  difference            {err:+6.1f} %")
 print()
 if abs(err) <= 15.0:

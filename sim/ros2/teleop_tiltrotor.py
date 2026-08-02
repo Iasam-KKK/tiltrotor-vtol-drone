@@ -48,6 +48,7 @@ silently fails to connect -- topics list fine and no data ever moves.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -165,8 +166,12 @@ class KeyReader(threading.Thread):
 
 
 class Teleop(Node):
-    def __init__(self) -> None:
+    def __init__(self, scripted: bool = False, glide_hold: float = 60.0,
+                 climb_m: float = 40.0) -> None:
         super().__init__("tiltrotor_teleop")
+        self.scripted = scripted
+        self._glide_hold = glide_hold
+        self._climb_m = climb_m
         qos = px4_qos()
 
         self.pub_mode = self.create_publisher(
@@ -196,14 +201,23 @@ class Teleop(Node):
         self.offboard_ticks = 0
         self.gliding = False
 
-        self.keys = KeyReader()
-        self.keys.start()
+        # KeyReader puts the terminal in raw mode, which needs a tty. Under
+        # `--script` there isn't one, and asking for it would abort the run.
+        self.keys = None if scripted else KeyReader()
+        if self.keys is not None:
+            self.keys.start()
+
+        self._z0 = None                 # ground-level NED z, set on first fix
+        self._script = self._build_script() if scripted else None
+        self._script_i = 0
+        self._script_t0 = None
 
         self.create_timer(1.0 / RATE_HZ, self._tick)
         # Don't let "no data" look like "still starting up" indefinitely.
         self._ticks = 0
         self._warned = False
-        print(HELP)
+        if not scripted:
+            print(HELP)
         self.get_logger().info(
             "streaming setpoints; waiting for PX4 position data...")
 
@@ -215,6 +229,7 @@ class Teleop(Node):
             self.sp = [msg.x, msg.y, msg.z - TAKEOFF_ALT]
             self.yaw = msg.heading
             self.have_pos = True
+            self._z0 = msg.z            # ground datum, for scripted climbs
             self.get_logger().info(
                 f"position acquired: x={msg.x:.1f} y={msg.y:.1f} z={msg.z:.1f}")
         self._x, self._y, self._z = msg.x, msg.y, msg.z
@@ -286,9 +301,64 @@ class Teleop(Node):
                 self.sp = [self._x, self._y, self._z]
             print("  -> powered flight, holding here")
 
+    # --- scripted flight --------------------------------------------------
+    def _build_script(self):
+        """The same key sequence a human would type, on a clock.
+
+        The glide test is the only one that measures the *aerodynamic* model
+        rather than the mechanism, and it was the only one that could not run
+        without somebody sitting at the RDP desktop pressing keys. That made
+        the drag polar the least-tested part of the aircraft, which is exactly
+        backwards. Times are wall-clock offsets from the first position fix.
+        """
+        hold = self._glide_hold
+        return [
+            (0.0,  "arm",                    lambda: self._arm(True)),
+            (3.0,  "engage offboard",        self._offboard),
+            (6.0,  f"climb {self._climb_m:.0f} m",
+             lambda: self._set_alt(self._climb_m)),
+            (38.0, "transition to forward flight",
+             lambda: self._transition(True)),
+            (54.0, "enter glide",            lambda: self._glide(True)),
+            (54.0 + hold, "sequence complete", self._script_done),
+        ]
+
+    def _set_alt(self, above_ground_m: float) -> None:
+        if self._z0 is None:
+            return
+        self.sp[2] = self._z0 - above_ground_m      # NED: negative is up
+        print(f"  -> climbing to {above_ground_m:.0f} m above spawn")
+
+    def _script_done(self) -> None:
+        print("  -> scripted sequence complete; disarming")
+        self._arm(False)
+        raise KeyboardInterrupt
+
+    def _run_script(self) -> None:
+        # The clock does not start until PX4 has a position, otherwise the
+        # whole sequence burns down while the agent is still connecting.
+        if not self.have_pos:
+            return
+        now = self.get_clock().now().nanoseconds / 1e9
+        if self._script_t0 is None:
+            self._script_t0 = now
+            print("\n  [script] position acquired, starting sequence\n")
+        t = now - self._script_t0
+
+        while (self._script_i < len(self._script)
+               and t >= self._script[self._script_i][0]):
+            at, label, fn = self._script[self._script_i]
+            self._script_i += 1
+            alt = (self._z0 - self._z) if self._z0 is not None else 0.0
+            print(f"  [script t={t:5.1f}s  alt={alt:5.1f}m] {label}")
+            fn()
+
     # --- main loop --------------------------------------------------------
     def _tick(self) -> None:
-        self._handle_key()
+        if self.scripted:
+            self._run_script()
+        else:
+            self._handle_key()
 
         self._ticks += 1
         if not self.have_pos and not self._warned and self._ticks > 8 * RATE_HZ:
@@ -334,6 +404,8 @@ class Teleop(Node):
         self.pub_sp.publish(sp)
 
     def _handle_key(self) -> None:
+        if self.keys is None:
+            return
         k = self.keys.take()
         if k is None:
             return
@@ -389,14 +461,28 @@ class Teleop(Node):
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--script", action="store_true",
+                    help="fly arm -> offboard -> climb -> transition -> glide "
+                         "on a timer, with no keyboard. Lets verify_glide.sh "
+                         "run headlessly instead of needing the RDP desktop.")
+    ap.add_argument("--glide-hold", type=float, default=60.0,
+                    help="seconds to stay in the glide (default 60), which "
+                         "must exceed verify_glide.sh's sampling window")
+    ap.add_argument("--climb", type=float, default=40.0,
+                    help="metres above spawn to climb before transitioning")
+    args = ap.parse_args()
+
     rclpy.init()
-    node = Teleop()
+    node = Teleop(scripted=args.script, glide_hold=args.glide_hold,
+                  climb_m=args.climb)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.keys.stop()
+        if node.keys is not None:
+            node.keys.stop()
         node.destroy_node()
         rclpy.shutdown()
 
